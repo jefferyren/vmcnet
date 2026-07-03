@@ -14,7 +14,7 @@ import jax
 import jax.flatten_util
 import jax.numpy as jnp
 
-from vmcnet.utils.typing import Array, P, PRNGKey
+from vmcnet.utils.typing import Array, P, PRNGKey, PyTree
 
 
 class SameSampledSPRINGUnifiedState(NamedTuple):
@@ -32,10 +32,10 @@ class SameSampledSPRINGUnifiedState(NamedTuple):
         step: step/epoch counter (int scalar, starts at 0).
     """
 
-    phi: P
-    z_probe: P
-    phi_probe: P
-    x_star: P
+    phi: PyTree
+    z_probe: PyTree
+    phi_probe: PyTree
+    x_star: PyTree
     residual_buffer: Array
     r_hat: Array
     beta: Array

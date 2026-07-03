@@ -3,7 +3,6 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pytest
 
 from vmcnet.updates.same_sampled_spring_unified import (
     SameSampledSPRINGUnifiedState,
@@ -21,6 +20,7 @@ def _example_params():
 
 
 def test_draw_unit_norm_like_has_global_unit_l2_norm():
+    """Test that _draw_unit_norm_like draws a pytree with global unit L2 norm."""
     params = _example_params()
     key = jax.random.PRNGKey(0)
     x_star = _draw_unit_norm_like(key, params)
@@ -33,6 +33,7 @@ def test_draw_unit_norm_like_has_global_unit_l2_norm():
 
 
 def test_state_namedtuple_fields():
+    """Test that SameSampledSPRINGUnifiedState has the expected field order."""
     fields = SameSampledSPRINGUnifiedState._fields
     assert fields == (
         "phi",
