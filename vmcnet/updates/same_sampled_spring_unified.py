@@ -15,16 +15,33 @@ import jax
 import jax.flatten_util
 import jax.numpy as jnp
 import neural_tangents as nt  # type: ignore
+import optax
+from ml_collections import ConfigDict
 
-from vmcnet.utils.pytree_helpers import multiply_tree_by_scalar
+import vmcnet.utils as utils
+from vmcnet.updates.update_param_fns import (
+    UpdateParamFn,
+    make_traced_fn_with_single_metrics,
+    update_metrics_with_noclip,
+)
+from vmcnet.utils.distribute import pmean_if_pmap
+from vmcnet.utils.pytree_helpers import (
+    multiply_tree_by_scalar,
+    tree_inner_product,
+    tree_reduce_l1,
+)
 from vmcnet.utils.typing import (
     Array,
+    D,
+    GetPositionFromData,
     LearningRateSchedule,
     ModelApply,
     P,
     PRNGKey,
     PyTree,
+    S,
     Tuple,
+    UpdateDataFn,
 )
 
 
@@ -289,3 +306,175 @@ def get_same_sampled_spring_unified_step(
         return updates, new_state
 
     return step
+
+
+def constrain_norm(grad: P, norm_constraint: chex.Numeric = 0.001) -> P:
+    """Euclidean norm constraint on the update (matches spring.py).
+
+    Args:
+        grad: the (params-shaped) update to constrain.
+        norm_constraint: the maximum allowed squared L2 norm.
+
+    Returns:
+        `grad`, rescaled down (never up) so its global squared L2 norm is at most
+        `norm_constraint`.
+    """
+    sq_norm_scaled_grads = tree_inner_product(grad, grad)
+    sq_norm_scaled_grads = pmean_if_pmap(sq_norm_scaled_grads)
+    norm_scale_factor = jnp.sqrt(norm_constraint / sq_norm_scaled_grads)
+    coefficient = jnp.minimum(norm_scale_factor, 1)
+    return multiply_tree_by_scalar(grad, coefficient)
+
+
+def construct_same_sampled_spring_unified_update_param_fn(
+    energy_and_statistics_fn: Callable,
+    optimizer_apply: Callable,
+    get_position_fn: GetPositionFromData[D],
+    update_data_fn: UpdateDataFn[D, P],
+    apply_pmap: bool = True,
+    record_param_l1_norm: bool = False,
+) -> UpdateParamFn[P, D, S]:
+    """Create the update_param_fn for same_sampled_spring_unified.
+
+    Args:
+        energy_and_statistics_fn: (params, positions) -> (energy, local_energies,
+            stats), where stats has keys "variance", "energy_noclip", and
+            "variance_noclip".
+        optimizer_apply: (energy, local_energies, params, optimizer_state, data) ->
+            (new_params, new_optimizer_state).
+        get_position_fn: gets the walker positions from the MCMC data.
+        update_data_fn: function which updates data for new params.
+        apply_pmap: whether to pmap (True) or jit (False) the returned function.
+        record_param_l1_norm: whether to record the L1 norm of the params in metrics.
+
+    Returns:
+        Callable: function which updates the parameters given the current data,
+        params, and optimizer state. The signature of this function is
+            (params, data, optimizer_state, key)
+            -> (new_params, new_data, new_optimizer_state, metrics, key)
+        The function is pmapped if apply_pmap is True, and jitted if apply_pmap is
+        False.
+    """
+
+    def update_param_fn(params, data, optimizer_state, key):
+        position = get_position_fn(data)
+        energy, local_energies, stats = energy_and_statistics_fn(params, position)
+        params, optimizer_state = optimizer_apply(
+            energy, local_energies, params, optimizer_state, data
+        )
+        data = update_data_fn(data, params)
+
+        metrics = {"energy": energy, "variance": stats["variance"]}
+        metrics = update_metrics_with_noclip(
+            stats["energy_noclip"], stats["variance_noclip"], metrics
+        )
+        if record_param_l1_norm:
+            metrics.update({"param_l1_norm": tree_reduce_l1(params)})
+        return params, data, optimizer_state, metrics, key
+
+    return make_traced_fn_with_single_metrics(update_param_fn, apply_pmap)
+
+
+def initialize_same_sampled_spring_unified(
+    log_psi_apply: ModelApply[P],
+    energy_and_statistics_fn: Callable,
+    params: P,
+    get_position_fn: GetPositionFromData[D],
+    update_data_fn: UpdateDataFn[D, P],
+    learning_rate_schedule: LearningRateSchedule,
+    optimizer_config: ConfigDict,
+    key: PRNGKey,
+    record_param_l1_norm: bool = False,
+    apply_pmap: bool = True,
+) -> Tuple[
+    UpdateParamFn[P, D, SameSampledSPRINGUnifiedState],
+    SameSampledSPRINGUnifiedState,
+    PRNGKey,
+]:
+    """Get an update param function and initial state for same_sampled_spring_unified.
+
+    Args:
+        log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
+        energy_and_statistics_fn: (params, positions) -> (energy, local_energies,
+            stats), where stats has keys "variance", "energy_noclip", and
+            "variance_noclip".
+        params: initial model parameters.
+        get_position_fn: gets the walker positions from the MCMC data.
+        update_data_fn: function which updates data for new params.
+        learning_rate_schedule: step -> base learning rate.
+        optimizer_config: ConfigDict with keys learning_rate, mu, damping,
+            constrain_norm, norm_constraint, lb_window, probe_lr, probe_damping,
+            adaptive_eta, and adaptive_probe.
+        key: PRNGKey used to draw the probe target `x_star`.
+        record_param_l1_norm: whether to record the L1 norm of the params in metrics.
+        apply_pmap: whether to pmap (True) or jit (False) the returned update fn and
+            the initial state construction.
+
+    Returns:
+        Tuple (update_param_fn, optimizer_state, key), where `key` has been advanced
+        past the subkey consumed to draw `x_star`.
+    """
+    p = int(optimizer_config.lb_window)
+    mu = float(optimizer_config.mu)
+
+    # probe_lr defaults to the base learning_rate value; a negative config value is
+    # the "unset" sentinel (mirrors the PyTorch reference, where probe_lr falls back
+    # to lr).
+    probe_lr = (
+        float(optimizer_config.learning_rate)
+        if optimizer_config.probe_lr < 0
+        else float(optimizer_config.probe_lr)
+    )
+
+    step_fn = get_same_sampled_spring_unified_step(
+        log_psi_apply,
+        learning_rate_schedule,
+        optimizer_config.damping,
+        optimizer_config.probe_damping,
+        p,
+        probe_lr,
+        bool(optimizer_config.adaptive_eta),
+        bool(optimizer_config.adaptive_probe),
+    )
+
+    def init_state(local_params: P, subkey: PRNGKey) -> SameSampledSPRINGUnifiedState:
+        zeros = jax.tree_map(jnp.zeros_like, local_params)
+        return SameSampledSPRINGUnifiedState(
+            phi=zeros,
+            z_probe=zeros,
+            phi_probe=zeros,
+            x_star=_draw_unit_norm_like(subkey, local_params),
+            residual_buffer=jnp.zeros(2 * p),
+            r_hat=jnp.array(1.0),
+            beta=jnp.array(mu),
+            checkpoint_idx=jnp.array(1, jnp.int32),
+            step=jnp.array(0, jnp.int32),
+        )
+
+    def optimizer_apply(energy, local_energies, params, optimizer_state, data):
+        positions = get_position_fn(data)
+        centered_local_energies = local_energies - energy
+        updates, optimizer_state = step_fn(
+            centered_local_energies, params, positions, optimizer_state
+        )
+        if optimizer_config.constrain_norm:
+            updates = constrain_norm(updates, optimizer_config.norm_constraint)
+        params = optax.apply_updates(params, updates)
+        return params, optimizer_state
+
+    update_param_fn = construct_same_sampled_spring_unified_update_param_fn(
+        energy_and_statistics_fn,
+        optimizer_apply,
+        get_position_fn=get_position_fn,
+        update_data_fn=update_data_fn,
+        record_param_l1_norm=record_param_l1_norm,
+        apply_pmap=apply_pmap,
+    )
+
+    key, subkey = utils.distribute.split_or_psplit_key(key, apply_pmap)
+    if apply_pmap:
+        optimizer_state = utils.distribute.pmap(init_state)(params, subkey)
+    else:
+        optimizer_state = init_state(params, subkey)
+
+    return update_param_fn, optimizer_state, key

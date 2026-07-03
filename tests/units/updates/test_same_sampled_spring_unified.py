@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from ml_collections import ConfigDict
 
 # neural_tangents is imported after the vmcnet imports below: vmcnet.updates
 # transitively imports kfac_jax (via vmcnet.physics), and in this environment
@@ -15,6 +16,7 @@ from vmcnet.updates.same_sampled_spring_unified import (
     _build_operators,
     _draw_unit_norm_like,
     get_same_sampled_spring_unified_step,
+    initialize_same_sampled_spring_unified,
 )
 from vmcnet.updates.spring import get_spring_step
 from vmcnet.utils.pytree_helpers import tree_inner_product
@@ -302,3 +304,71 @@ def test_step_advances_state_and_is_jittable():
     assert int(new_state.step) == 1
     assert new_state.residual_buffer.shape == (2 * p,)
     assert bool(jnp.all(jnp.isfinite(new_state.residual_buffer)))
+
+
+def _energy_and_statistics_fn(params, positions):
+    # deterministic fake "local energies" so the test needs no MCMC/physics.
+    local_energies = jnp.sum(_log_psi_apply(params, positions)) * 0.0 + jnp.arange(
+        positions.shape[0], dtype=jnp.float32
+    )
+    energy = jnp.mean(local_energies)
+    stats = {
+        "variance": jnp.var(local_energies),
+        "energy_noclip": energy,
+        "variance_noclip": jnp.var(local_energies),
+    }
+    return energy, local_energies, stats
+
+
+def _config(p=4):
+    """Build an optimizer_config ConfigDict for the initializer test."""
+    return ConfigDict(
+        {
+            "learning_rate": 0.05,
+            "mu": 0.9,
+            "damping": 1e-3,
+            "constrain_norm": True,
+            "norm_constraint": 1e-3,
+            "lb_window": p,
+            "probe_lr": -1.0,  # sentinel -> defaults to learning_rate
+            "probe_damping": 1e-3,
+            "adaptive_eta": False,
+            "adaptive_probe": False,
+        }
+    )
+
+
+def test_initialize_single_device_and_apply_reduces_state_step():
+    """Test initialize_same_sampled_spring_unified builds state and applies once."""
+    params, positions, _ = _operator_setup(nchains=8)
+    data = positions  # get_position_fn is identity for this fake data
+
+    update_param_fn, opt_state, key = initialize_same_sampled_spring_unified(
+        _log_psi_apply,
+        _energy_and_statistics_fn,
+        params,
+        get_position_fn=lambda d: d,
+        update_data_fn=lambda d, p_: d,
+        learning_rate_schedule=lambda t: 0.05,
+        optimizer_config=_config(),
+        key=jax.random.PRNGKey(0),
+        record_param_l1_norm=False,
+        apply_pmap=False,  # single device: jitted, not pmapped
+    )
+
+    # x_star has global unit norm; counters initialized.
+    assert np.isclose(
+        float(jnp.linalg.norm(jax.flatten_util.ravel_pytree(opt_state.x_star)[0])),
+        1.0,
+        atol=1e-5,
+    )
+    assert int(opt_state.step) == 0
+    assert int(opt_state.checkpoint_idx) == 1
+
+    new_params, new_data, new_state, metrics, new_key = update_param_fn(
+        params, data, opt_state, key
+    )
+    assert int(new_state.step) == 1
+    assert "energy" in metrics and "variance" in metrics
+    for leaf in jax.tree_util.tree_leaves(new_params):
+        assert bool(jnp.all(jnp.isfinite(leaf)))
