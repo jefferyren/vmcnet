@@ -258,7 +258,11 @@ overrides.
     "norm_constraint": 1e-3,
     # Adaptive-beta / probe hyperparams
     "lb_window": 30,           # lookback p; buffer length is 2p
-    "probe_lr": 5e-2,          # base probe step (used when adaptive_probe=False)
+    # probe_lr: base probe step used when adaptive_probe=False. A NEGATIVE value is a
+    # sentinel meaning "default to the base learning_rate value" (resolved in the
+    # initializer: probe_lr = learning_rate when probe_lr < 0). Set a positive value to
+    # override independently.
+    "probe_lr": -1.0,
     "probe_damping": 1e-3,     # probe normal-equation damping (defaults to `damping`)
     "adaptive_eta": False,     # eta_main = 1 - beta*(1 - lr(step))
     "adaptive_probe": False,   # probe uses eta_main instead of probe_lr
@@ -266,6 +270,21 @@ overrides.
 ```
 
 (`mu` default `0.9` matches the reference's initial β, not base SPRING's `0.99`.)
+
+**`probe_lr` resolution (in `initialize_same_sampled_spring_unified`):**
+
+```python
+# probe_lr defaults to the base learning_rate value (mirrors the PyTorch reference,
+# where probe_lr falls back to lr). A negative config value is the "unset" sentinel.
+probe_lr = (
+    optimizer_config.learning_rate
+    if optimizer_config.probe_lr < 0
+    else optimizer_config.probe_lr
+)
+```
+
+This keeps `probe_lr` tracking `learning_rate` by default (even if `learning_rate` is
+changed), stays overridable, and avoids `None`-under-locked-`ConfigDict` issues.
 
 ## 6. Wiring (files touched)
 
