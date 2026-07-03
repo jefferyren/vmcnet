@@ -100,3 +100,4 @@ def test_energy_decreases_over_steps():
     assert energies[-1] < 0.25
     # the adaptive schedule must have moved beta off its initial value by now
     assert int(opt_state.step) == 40
+    assert float(opt_state.beta) < 0.9

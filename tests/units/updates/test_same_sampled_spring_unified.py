@@ -306,6 +306,31 @@ def test_step_advances_state_and_is_jittable():
     assert bool(jnp.all(jnp.isfinite(new_state.residual_buffer)))
 
 
+def test_probe_residual_converges():
+    """Probe residual decreases over steps: z_probe converges toward x_star."""
+    params, positions, _ = _operator_setup(nchains=10)
+    p = 1000  # large lb_window: adaptive-beta never triggers, beta stays == mu
+    step_fn = get_same_sampled_spring_unified_step(
+        _log_psi_apply,
+        lambda t: 0.05,
+        damping=1e-3,
+        probe_damping=1e-3,
+        p=p,
+        probe_lr=0.5,
+        adaptive_eta=False,
+        adaptive_probe=False,
+    )
+    centered_energies = jax.random.normal(jax.random.PRNGKey(11), (positions.shape[0],))
+    state = _make_state(params, p=p, beta=0.9)
+    residuals = []
+    for _ in range(15):
+        _, state = step_fn(centered_energies, params, positions, state)
+        residuals.append(float(state.residual_buffer[-1]))
+    assert np.all(np.isfinite(residuals))
+    assert residuals[-1] < residuals[0]
+    assert residuals[-1] < 0.5 * residuals[0]  # substantial, genuine convergence
+
+
 def _energy_and_statistics_fn(params, positions):
     # deterministic fake "local energies" so the test needs no MCMC/physics.
     local_energies = jnp.sum(_log_psi_apply(params, positions)) * 0.0 + jnp.arange(

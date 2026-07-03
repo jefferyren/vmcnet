@@ -195,9 +195,11 @@ def initialize_optimizer(
             vmc_config.record_param_l1_norm,
             apply_pmap=apply_pmap,
         )
-        # SameSampledSPRINGUnifiedState is a concrete NamedTuple rather than the
-        # (mostly-Any) OptimizerState alias, so mypy can't verify it structurally;
-        # this mirrors the existing type: ignore usages elsewhere in the codebase.
+        # SameSampledSPRINGUnifiedState is not a member of the OptimizerState union
+        # (which only covers optax/kfac states), and UpdateParamFn's state TypeVar is
+        # invariant, so mypy cannot verify this return against the declared
+        # UpdateParamFn[P, D, OptimizerState] type; the suppression is safe because
+        # optimizer_state and update_param_fn are actually consistent with each other.
         return update_param_fn, optimizer_state, key  # type: ignore[return-value]
     else:
         raise ValueError(

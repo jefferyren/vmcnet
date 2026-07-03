@@ -259,6 +259,10 @@ def get_same_sampled_spring_unified_step(
         # ---- probe: self-contained synthetic solve on the SAME operators ----
         # probe_lr defaults to the base learning_rate value (resolved in the
         # initializer); when adaptive_probe is set, the probe uses eta_main instead.
+        # When adaptive_probe is False, eta_probe == probe_lr is a FIXED scalar for
+        # every step (not re-evaluated against the schedule), so under an
+        # inverse_time schedule the main step's eta_main decays over training while
+        # the probe step stays constant -- intended, matching the reference.
         eta_probe = eta_main if adaptive_probe else probe_lr
 
         # zeta_probe = (b - A z_probe) - beta*(A phi_probe)
