@@ -277,7 +277,7 @@ def get_same_sampled_spring_unified_step(
         )
 
         # probe residual on the UPDATED iterate:
-        # ||A z_probe_new - b|| = ||A(z - x_star)||
+        # ||A z_probe_new - b|| = ||A(z_probe_new - x_star)||
         resid_in = jax.tree_map(lambda z, xs: z - xs, z_probe_new, state.x_star)
         probe_res_norm = jnp.linalg.norm(apply_A(resid_in))
 
