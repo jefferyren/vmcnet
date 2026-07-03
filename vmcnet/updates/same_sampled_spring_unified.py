@@ -8,14 +8,14 @@ adaptive-``beta`` schedule. See
 ``docs/superpowers/specs/2026-07-02-same-sampled-spring-unified-design.md``.
 """
 
-from typing import Callable, NamedTuple, Tuple
+from typing import Callable, NamedTuple
 
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
 
 from vmcnet.utils.pytree_helpers import multiply_tree_by_scalar
-from vmcnet.utils.typing import Array, ModelApply, P, PRNGKey, PyTree
+from vmcnet.utils.typing import Array, ModelApply, P, PRNGKey, PyTree, Tuple
 
 
 class SameSampledSPRINGUnifiedState(NamedTuple):
@@ -62,8 +62,9 @@ def _build_operators(
 
     The main solve and the probe solve must use identical operators, so they are built
     once here and reused. `apply_A` centers its output and `apply_AT` centers its input
-    (they are transposes of one another); the constant-mode term `(1/N) ones onesᵀ` and
-    the negative-eigenvalue clip live in the returned eigendecomposition of `T`.
+    (they are transposes of one another); the constant-mode term `(1/N) ones onesᵀ` is
+    included in `T`, but the negative-eigenvalue clip and damping are deferred to the
+    consumer of the returned eigendecomposition (not applied in this function).
 
     Args:
         kernel_fn: neural-tangents empirical kernel, built once from `log_psi_apply`.

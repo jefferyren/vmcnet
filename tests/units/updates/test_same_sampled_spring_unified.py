@@ -16,7 +16,7 @@ from vmcnet.updates.same_sampled_spring_unified import (
 )
 from vmcnet.utils.pytree_helpers import tree_inner_product
 
-import neural_tangents as nt
+import neural_tangents as nt  # type: ignore
 
 
 def _example_params():
