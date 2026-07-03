@@ -32,30 +32,21 @@
 
 ---
 
-### Task 0: Environment setup + green baseline
+### Task 0: Environment setup + green baseline — DONE by controller
 
 **Files:** none (environment only).
 
-- [ ] **Step 1: Create a Python 3.9 venv and install the package with testing extras**
+**Resolution (already completed):** The repo pins `jax==0.4.34`/`jaxlib==0.4.34`, which require **Python ≥3.10** (the README's "Python 3.9" is stale; CI/tox uses `py312`). The correct interpreter is the pre-existing conda env:
 
-Run:
-```bash
-cd /Users/jefferyren/Desktop/vmcnet
-/Library/Frameworks/Python.framework/Versions/3.9/bin/python3 -m venv .venv
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install -e ".[testing]"
 ```
-Expected: install completes; `jax`, `jaxlib`, `neural_tangents`, `optax`, `ml_collections`, `chex`, `pytest`, `black`, `mypy`, `flake8` present. If the 3.9 framework python is unavailable, use any Python 3.9 interpreter. (`.venv/` is already gitignored — verify with `git status`.)
+/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python   (Python 3.12.13)
+```
 
-- [ ] **Step 2: Confirm a green baseline on the fast unit tests**
+It already has the exact pinned deps: jax/jaxlib 0.4.34, neural_tangents 0.6.5, optax 0.2.4, ml_collections, chex, pytest 8.3.4, black 25.1.0, flake8 7.1.1 (+ flake8-docstrings 1.7.0), mypy 1.15.0. Baseline `tests/units/train/test_vmc.py` runs clean (0 failures). `vmcnet.updates.spring` imports and the NTK path works.
 
-Run: `.venv/bin/pytest tests/units/train/test_vmc.py -q`
-Expected: PASS (all green). This confirms the toolchain works before we add code.
-
-- [ ] **Step 3: Confirm imports of the modules we will touch**
-
-Run: `.venv/bin/python -c "import vmcnet.updates.spring, vmcnet.train.default_config, vmcnet.updates.parse_optimizer_config; import neural_tangents; print('ok')"`
-Expected: prints `ok`.
+**All subsequent tasks use this interpreter and invoke tools via `-m`**, e.g.
+`/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest ...`,
+`... -m black ...`, `... -m flake8 ...`, `... -m mypy ...`.
 
 *(No commit — environment only.)*
 
@@ -133,7 +124,7 @@ def test_state_namedtuple_fields():
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
 Expected: FAIL — `ModuleNotFoundError` / cannot import `same_sampled_spring_unified`.
 
 - [ ] **Step 4: Create the module with the state pytree and helper**
@@ -223,7 +214,7 @@ def _draw_unit_norm_like(key: PRNGKey, params: P) -> P:
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
 Expected: PASS (2 passed).
 
 - [ ] **Step 6: Commit**
@@ -314,7 +305,7 @@ def test_T_matches_base_spring_construction():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k "apply_A or apply_AT or T_matches"`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k "apply_A or apply_AT or T_matches"`
 Expected: FAIL — `_build_operators` not importable.
 
 - [ ] **Step 3: Implement `_build_operators`**
@@ -375,7 +366,7 @@ def _build_operators(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
 Expected: PASS (all).
 
 - [ ] **Step 5: Commit**
@@ -462,7 +453,7 @@ def test_adaptive_beta_is_jittable():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k adaptive_beta`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k adaptive_beta`
 Expected: FAIL — `_adaptive_beta_update` not importable.
 
 - [ ] **Step 3: Implement `_adaptive_beta_update`**
@@ -522,7 +513,7 @@ def _adaptive_beta_update(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k adaptive_beta`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k adaptive_beta`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -624,7 +615,7 @@ def test_step_advances_state_and_is_jittable():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k "matches_base_spring or advances_state"`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k "matches_base_spring or advances_state"`
 Expected: FAIL — `get_same_sampled_spring_unified_step` not importable.
 
 - [ ] **Step 3: Implement the step kernel**
@@ -751,7 +742,7 @@ def get_same_sampled_spring_unified_step(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
 Expected: PASS (all tests so far). The `test_main_update_matches_base_spring` passing is the key correctness anchor.
 
 - [ ] **Step 5: Commit**
@@ -854,7 +845,7 @@ def test_initialize_single_device_and_apply_reduces_state_step():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k initialize_single_device`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k initialize_single_device`
 Expected: FAIL — `initialize_same_sampled_spring_unified` not importable.
 
 - [ ] **Step 3: Implement `constrain_norm`, the constructor, and the initializer**
@@ -979,7 +970,7 @@ def initialize_same_sampled_spring_unified(
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
 Expected: PASS (all).
 
 - [ ] **Step 5: Commit**
@@ -1033,7 +1024,7 @@ def test_parse_optimizer_config_dispatches_new_type():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k "default_config_has_block or dispatches_new_type"`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q -k "default_config_has_block or dispatches_new_type"`
 Expected: FAIL — config block missing / symbol not present.
 
 - [ ] **Step 3: Add the config block**
@@ -1097,8 +1088,8 @@ Then, immediately before the final `else:` in `initialize_optimizer`, add:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `.venv/bin/pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
-Expected: PASS (all). Also confirm no import cycle: `.venv/bin/python -c "import vmcnet.updates.parse_optimizer_config; print('ok')"` → `ok`.
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates/test_same_sampled_spring_unified.py -q`
+Expected: PASS (all). Also confirm no import cycle: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -c "import vmcnet.updates.parse_optimizer_config; print('ok')"` → `ok`.
 
 - [ ] **Step 6: Commit**
 
@@ -1222,7 +1213,7 @@ def test_energy_decreases_over_steps():
 
 - [ ] **Step 3: Run the test to verify it fails, then passes**
 
-Run: `.venv/bin/pytest tests/integrations/updates/test_same_sampled_spring_unified_integration.py -q --run_slow`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/integrations/updates/test_same_sampled_spring_unified_integration.py -q --run_slow`
 Expected: initially FAIL only if there is a real bug; otherwise it should PASS once the optimizer is correct. If it fails, debug with the systematic-debugging skill (do not weaken the assertions to force a pass). Expected final state: PASS.
 
 - [ ] **Step 4: Commit**
@@ -1240,25 +1231,25 @@ git commit -m "Add integration smoke test for same_sampled_spring_unified"
 
 - [ ] **Step 1: Format with black**
 
-Run: `.venv/bin/black vmcnet tests`
-Expected: reformats the new files if needed; re-run `.venv/bin/black --check vmcnet tests` → "All done".
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m black vmcnet tests`
+Expected: reformats the new files if needed; re-run `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m black --check vmcnet tests` → "All done".
 
 - [ ] **Step 2: Docstring/flake8 lint**
 
-Run: `.venv/bin/flake8 vmcnet tests --select D --extend-ignore D401`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m flake8 vmcnet tests --select D --extend-ignore D401`
 Expected: no errors. Fix any missing/short docstrings on new public functions.
 
 - [ ] **Step 3: Type-check**
 
-Run: `.venv/bin/mypy vmcnet tests`
+Run: `/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m mypy vmcnet tests`
 Expected: no new errors introduced by our files. (Third-party `neural_tangents` is untyped but imported with `# type: ignore` as in spring.py; `ml_collections`/`optax` are in mypy's ignore list per `pyproject.toml`.)
 
 - [ ] **Step 4: Run the full fast unit suite + our slow integration test**
 
 Run:
 ```bash
-.venv/bin/pytest tests/units -q
-.venv/bin/pytest tests/units/updates tests/integrations/updates -q --run_slow
+/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units -q
+/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python -m pytest tests/units/updates tests/integrations/updates -q --run_slow
 ```
 Expected: all PASS. No pre-existing unit tests broken.
 
