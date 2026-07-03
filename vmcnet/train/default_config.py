@@ -293,6 +293,27 @@ def get_default_vmc_config() -> Dict:
                 "norm_constraint": 0.001,
                 "clip_threshold": 1000.0,  # GN works best with cusp Jastrow and no clipping
             },
+            "same_sampled_spring_unified": {
+                # Learning rate settings
+                "schedule_type": "inverse_time",  # constant or inverse_time
+                "learning_rate": 5e-2,
+                "learning_decay_rate": 1e-4,
+                # SPRING hyperparams (mu is the INITIAL beta)
+                "mu": 0.9,
+                "damping": 1e-3,
+                "constrain_norm": True,
+                "norm_constraint": 1e-3,
+                # Adaptive-beta / probe hyperparams
+                "lb_window": 30,  # lookback p; buffer length is 2p
+                # probe_lr: base probe step (used when adaptive_probe=False). A
+                # NEGATIVE value is a sentinel meaning "default to the base
+                # learning_rate value" (resolved in the initializer). Set a positive
+                # value to override independently.
+                "probe_lr": -1.0,
+                "probe_damping": 1e-3,
+                "adaptive_eta": False,  # eta_main = 1 - beta*(1 - lr(step))
+                "adaptive_probe": False,  # probe uses eta_main instead of probe_lr
+            },
         },
     }
     return vmc_config

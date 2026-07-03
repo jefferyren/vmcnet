@@ -372,3 +372,39 @@ def test_initialize_single_device_and_apply_reduces_state_step():
     assert "energy" in metrics and "variance" in metrics
     for leaf in jax.tree_util.tree_leaves(new_params):
         assert bool(jnp.all(jnp.isfinite(leaf)))
+
+
+def test_default_config_has_block():
+    """Test that the default VMC config has a same_sampled_spring_unified block."""
+    from vmcnet.train.default_config import get_default_vmc_config
+
+    cfg = get_default_vmc_config()
+    block = cfg["optimizer"]["same_sampled_spring_unified"]
+    for k in [
+        "schedule_type",
+        "learning_rate",
+        "learning_decay_rate",
+        "mu",
+        "damping",
+        "constrain_norm",
+        "norm_constraint",
+        "lb_window",
+        "probe_lr",
+        "probe_damping",
+        "adaptive_eta",
+        "adaptive_probe",
+    ]:
+        assert k in block, f"missing config key {k}"
+    assert block["mu"] == 0.9
+    assert block["probe_lr"] < 0  # sentinel
+
+
+def test_parse_optimizer_config_dispatches_new_type():
+    """Test that initialize_optimizer dispatches same_sampled_spring_unified."""
+    # The dispatcher must recognize the new optimizer_type without raising ValueError.
+    import inspect
+    from vmcnet.updates import parse_optimizer_config as poc
+
+    src = inspect.getsource(poc.initialize_optimizer)
+    assert "same_sampled_spring_unified" in src
+    assert hasattr(poc, "initialize_same_sampled_spring_unified")

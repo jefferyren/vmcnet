@@ -25,6 +25,7 @@ from .optax_utils import (
 from .spring import initialize_spring
 from .kfac import initialize_kfac
 from .gauss_newton import initialize_gauss_newton
+from .same_sampled_spring_unified import initialize_same_sampled_spring_unified
 
 
 def _get_learning_rate_schedule(
@@ -174,6 +175,30 @@ def initialize_optimizer(
             apply_pmap=apply_pmap,
         )
         return update_param_fn, optimizer_state, key
+    elif vmc_config.optimizer_type == "same_sampled_spring_unified":
+        energy_and_statistics_fn = physics.core.create_energy_and_statistics_fn(
+            local_energy_fn, vmc_config.nchains, clipping_fn, vmc_config.nan_safe
+        )
+        (
+            update_param_fn,
+            optimizer_state,
+            key,
+        ) = initialize_same_sampled_spring_unified(
+            log_psi_apply,
+            energy_and_statistics_fn,
+            params,
+            get_position_fn,
+            update_data_fn,
+            learning_rate_schedule,
+            vmc_config.optimizer.same_sampled_spring_unified,
+            key,
+            vmc_config.record_param_l1_norm,
+            apply_pmap=apply_pmap,
+        )
+        # SameSampledSPRINGUnifiedState is a concrete NamedTuple rather than the
+        # (mostly-Any) OptimizerState alias, so mypy can't verify it structurally;
+        # this mirrors the existing type: ignore usages elsewhere in the codebase.
+        return update_param_fn, optimizer_state, key  # type: ignore[return-value]
     else:
         raise ValueError(
             "Requested optimizer type not supported; {} was requested".format(
