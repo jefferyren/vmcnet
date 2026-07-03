@@ -146,7 +146,7 @@ def _adaptive_beta_update(
     alph = jnp.power(n_old, jnp.log(n_old)) / jnp.power(n_new, jnp.log(n_new))
 
     r_hat_new = alph * r_hat + (1.0 - alph) * jnp.minimum(1.0, r_ip)
-    rho = jnp.clip(1.0 - jnp.power(r_hat_new, 1.0 / p), a_min=0.0)
+    rho = jnp.clip(1.0 - jnp.power(r_hat_new, 1.0 / p), min=0.0)
     beta_new = (1.0 - rho) / (1.0 + rho)
 
     do_update = (step % p == 0) & (step >= 2 * p)

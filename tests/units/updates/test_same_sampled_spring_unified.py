@@ -159,6 +159,26 @@ def test_adaptive_beta_slides_buffer_but_no_update_before_2p():
     assert int(out_ckpt) == 1
 
 
+def test_adaptive_beta_all_zero_buffer_no_nan():
+    """All-zero buffer at a non-trigger step yields no NaN and no state change."""
+    p = 3
+    buffer = jnp.zeros(2 * p)
+    out_buf, out_rhat, out_beta, out_ckpt = _adaptive_beta_update(
+        buffer,
+        jnp.array(0.0),
+        jnp.array(1.0),
+        jnp.array(0.9),
+        jnp.array(1, jnp.int32),
+        jnp.array(1, jnp.int32),
+        p,
+    )
+    # step=1 (< 2p): no update; buffer slid a zero in; nothing is NaN.
+    assert bool(jnp.all(jnp.isfinite(out_buf)))
+    np.testing.assert_allclose(out_beta, 0.9)
+    np.testing.assert_allclose(out_rhat, 1.0)
+    assert int(out_ckpt) == 1
+
+
 def test_adaptive_beta_updates_at_trigger_matches_numpy():
     """Test that _adaptive_beta_update matches the numpy reference at a trigger step."""
     p = 3
