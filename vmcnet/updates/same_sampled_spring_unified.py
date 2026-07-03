@@ -10,12 +10,22 @@ adaptive-``beta`` schedule. See
 
 from typing import Callable, NamedTuple
 
+import chex
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
+import neural_tangents as nt  # type: ignore
 
 from vmcnet.utils.pytree_helpers import multiply_tree_by_scalar
-from vmcnet.utils.typing import Array, ModelApply, P, PRNGKey, PyTree, Tuple
+from vmcnet.utils.typing import (
+    Array,
+    LearningRateSchedule,
+    ModelApply,
+    P,
+    PRNGKey,
+    PyTree,
+    Tuple,
+)
 
 
 class SameSampledSPRINGUnifiedState(NamedTuple):
@@ -154,3 +164,128 @@ def _adaptive_beta_update(
     new_r_hat = jnp.where(do_update, r_hat_new, r_hat)
     new_checkpoint_idx = jnp.where(do_update, checkpoint_idx + 1, checkpoint_idx)
     return new_buffer, new_r_hat, new_beta, new_checkpoint_idx
+
+
+def get_same_sampled_spring_unified_step(
+    log_psi_apply: ModelApply[P],
+    learning_rate_schedule: LearningRateSchedule,
+    damping: chex.Scalar,
+    probe_damping: chex.Scalar,
+    p: int,
+    probe_lr: float,
+    adaptive_eta: bool,
+    adaptive_probe: bool,
+) -> Callable[
+    [Array, P, Array, SameSampledSPRINGUnifiedState],
+    Tuple[P, SameSampledSPRINGUnifiedState],
+]:
+    """Get the same_sampled_spring_unified step kernel.
+
+    Returns a pure function `step(centered_local_energies, params, positions, state)`
+    that returns `(updates, new_state)`, where `updates` is the (unconstrained)
+    parameter delta already scaled by `-eta_main`. The main SPRING solve and the probe
+    solve reuse the same operators and single eigendecomposition; only their additive
+    damping differs.
+
+    Args:
+        log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
+        learning_rate_schedule: step -> base learning rate.
+        damping: additive damping for the main normal equation.
+        probe_damping: additive damping for the probe normal equation.
+        p: adaptive-beta lookback window.
+        probe_lr: base probe step (used when adaptive_probe is False).
+        adaptive_eta: if True, eta_main = 1 - beta*(1 - lr(step)).
+        adaptive_probe: if True, the probe step uses eta_main instead of probe_lr.
+
+    Returns:
+        The step kernel described above.
+    """
+    kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+
+    def step(
+        centered_local_energies: Array,
+        params: P,
+        positions: Array,
+        state: SameSampledSPRINGUnifiedState,
+    ) -> Tuple[P, SameSampledSPRINGUnifiedState]:
+        nchains = positions.shape[0]
+        sqrt_n = jnp.sqrt(nchains)
+        beta = state.beta
+
+        apply_A, apply_AT, tvals, tvecs = _build_operators(
+            kernel_fn, log_psi_apply, params, positions
+        )
+        tvals_clipped = jnp.maximum(tvals, 0.0)
+
+        def solve(rhs: Array, damp: chex.Scalar) -> Array:
+            # Mirrors the exact operation order of base SPRING's
+            # `Tvecs @ jnp.diag(1 / Tvals) @ Tvecs.T @ epsilon_tilde` (spring.py:175):
+            # the mathematically-equivalent (Tvecs.T @ rhs) / Tvals two-matvec form
+            # takes a different float32 rounding path and can drift from base SPRING
+            # by more than this module's equivalence tolerance on ill-conditioned T.
+            return tvecs @ jnp.diag(1.0 / (tvals_clipped + damp)) @ tvecs.T @ rhs
+
+        # ---- main SPRING (identical to base SPRING; beta is dynamic, from state) ----
+        epsilon_bar = centered_local_energies / sqrt_n
+        rhs_main = epsilon_bar - apply_A(multiply_tree_by_scalar(state.phi, beta))
+        dual_main = solve(rhs_main, damping)
+        step_primal = apply_AT(dual_main)
+        phi_new = jax.tree_map(lambda s, ph: s + beta * ph, step_primal, state.phi)
+
+        # eta_main wraps the SCHEDULED learning rate (design decision): with
+        # adaptive_eta it is 1 - beta*(1 - lr(step)), else just lr(step). This reduces
+        # to base SPRING exactly when adaptive_eta is False.
+        lr = learning_rate_schedule(state.step)
+        eta_main = (1.0 - beta * (1.0 - lr)) if adaptive_eta else lr
+        updates = multiply_tree_by_scalar(phi_new, -eta_main)
+
+        # ---- probe: self-contained synthetic solve on the SAME operators ----
+        # probe_lr defaults to the base learning_rate value (resolved in the
+        # initializer); when adaptive_probe is set, the probe uses eta_main instead.
+        eta_probe = eta_main if adaptive_probe else probe_lr
+
+        # zeta_probe = (b - A z_probe) - beta*(A phi_probe)
+        #            = A(x_star - z_probe - beta*phi_probe)
+        probe_in = jax.tree_map(
+            lambda xs, z, ph: xs - z - beta * ph,
+            state.x_star,
+            state.z_probe,
+            state.phi_probe,
+        )
+        v = solve(apply_A(probe_in), probe_damping)
+        w = apply_AT(v)
+        phi_probe_new = jax.tree_map(lambda w_, ph: w_ + beta * ph, w, state.phi_probe)
+        z_probe_new = jax.tree_map(
+            lambda z, ph: z + eta_probe * ph, state.z_probe, phi_probe_new
+        )
+
+        # probe residual on the UPDATED iterate:
+        # ||A z_probe_new - b|| = ||A(z - x_star)||
+        resid_in = jax.tree_map(lambda z, xs: z - xs, z_probe_new, state.x_star)
+        probe_res_norm = jnp.linalg.norm(apply_A(resid_in))
+
+        # ---- adaptive-beta ----
+        new_buffer, new_r_hat, new_beta, new_ckpt = _adaptive_beta_update(
+            state.residual_buffer,
+            probe_res_norm,
+            state.r_hat,
+            beta,
+            state.checkpoint_idx,
+            state.step,
+            p,
+        )
+
+        new_state = SameSampledSPRINGUnifiedState(
+            phi=phi_new,
+            z_probe=z_probe_new,
+            phi_probe=phi_probe_new,
+            x_star=state.x_star,
+            residual_buffer=new_buffer,
+            r_hat=new_r_hat,
+            beta=new_beta,
+            checkpoint_idx=new_ckpt,
+            step=state.step + 1,
+        )
+        return updates, new_state
+
+    return step

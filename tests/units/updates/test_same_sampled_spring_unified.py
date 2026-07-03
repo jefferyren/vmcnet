@@ -14,7 +14,9 @@ from vmcnet.updates.same_sampled_spring_unified import (
     _adaptive_beta_update,
     _build_operators,
     _draw_unit_norm_like,
+    get_same_sampled_spring_unified_step,
 )
+from vmcnet.updates.spring import get_spring_step
 from vmcnet.utils.pytree_helpers import tree_inner_product
 
 import neural_tangents as nt  # type: ignore
@@ -216,3 +218,87 @@ def test_adaptive_beta_is_jittable():
         jnp.array(6, jnp.int32),
     )
     assert out[2].shape == ()  # beta scalar, no crash under jit
+
+
+def _zeros_like(params):
+    """Return a params-shaped pytree of zeros."""
+    return jax.tree_map(jnp.zeros_like, params)
+
+
+def _make_state(params, p, beta, phi=None):
+    """Build a SameSampledSPRINGUnifiedState with the given params/p/beta/phi."""
+    zeros = _zeros_like(params)
+    return SameSampledSPRINGUnifiedState(
+        phi=zeros if phi is None else phi,
+        z_probe=zeros,
+        phi_probe=zeros,
+        x_star=_draw_unit_norm_like(jax.random.PRNGKey(99), params),
+        residual_buffer=jnp.zeros(2 * p),
+        r_hat=jnp.array(1.0),
+        beta=jnp.array(float(beta)),
+        checkpoint_idx=jnp.array(1, jnp.int32),
+        step=jnp.array(0, jnp.int32),
+    )
+
+
+def test_main_update_matches_base_spring():
+    """Test that new_state.phi equals base SPRING's grad when beta==mu, no trigger."""
+    # With adaptive_eta off, beta==mu, and no beta trigger, the main momentum update
+    # (new_state.phi) must equal base SPRING's grad for arbitrary prior momentum.
+    params, positions, _ = _operator_setup(nchains=9)
+    mu, damping = 0.9, 1e-3
+    prev_grad = jax.tree_map(
+        lambda x: 0.1 * jax.random.normal(jax.random.PRNGKey(7), x.shape), params
+    )
+    centered_energies = jax.random.normal(jax.random.PRNGKey(8), (positions.shape[0],))
+
+    base_step = get_spring_step(_log_psi_apply, damping=damping, mu=mu)
+    base_grad = base_step(centered_energies, params, prev_grad, positions)
+
+    lr_sched = lambda t: 0.05  # noqa: E731
+    my_step = get_same_sampled_spring_unified_step(
+        _log_psi_apply,
+        lr_sched,
+        damping=damping,
+        probe_damping=damping,
+        p=1000,
+        probe_lr=0.05,
+        adaptive_eta=False,
+        adaptive_probe=False,
+    )
+    state = _make_state(params, p=1000, beta=mu, phi=prev_grad)
+    _, new_state = my_step(centered_energies, params, positions, state)
+
+    for a, b in zip(
+        jax.tree_util.tree_leaves(new_state.phi),
+        jax.tree_util.tree_leaves(base_grad),
+    ):
+        np.testing.assert_allclose(a, b, rtol=1e-5, atol=1e-6)
+
+
+def test_step_advances_state_and_is_jittable():
+    """Test that the step kernel is jittable and advances state as expected."""
+    params, positions, _ = _operator_setup(nchains=8)
+    p = 4
+    lr_sched = lambda t: 0.05  # noqa: E731
+    step_fn = get_same_sampled_spring_unified_step(
+        _log_psi_apply,
+        lr_sched,
+        damping=1e-3,
+        probe_damping=1e-3,
+        p=p,
+        probe_lr=0.05,
+        adaptive_eta=True,
+        adaptive_probe=True,
+    )
+    centered_energies = jax.random.normal(jax.random.PRNGKey(5), (positions.shape[0],))
+    state = _make_state(params, p=p, beta=0.9)
+
+    jstep = jax.jit(step_fn)
+    updates, new_state = jstep(centered_energies, params, positions, state)
+
+    # updates match params structure; step advanced by 1; buffer got a new entry.
+    assert jax.tree_util.tree_structure(updates) == jax.tree_util.tree_structure(params)
+    assert int(new_state.step) == 1
+    assert new_state.residual_buffer.shape == (2 * p,)
+    assert bool(jnp.all(jnp.isfinite(new_state.residual_buffer)))
