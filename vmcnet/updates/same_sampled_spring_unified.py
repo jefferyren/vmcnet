@@ -103,3 +103,54 @@ def _build_operators(
     t = (t + t.T) / 2
     tvals, tvecs = jnp.linalg.eigh(t)
     return apply_A, apply_AT, tvals, tvecs
+
+
+def _adaptive_beta_update(
+    residual_buffer: Array,
+    probe_res_norm: Array,
+    r_hat: Array,
+    beta: Array,
+    checkpoint_idx: Array,
+    step: Array,
+    p: int,
+) -> Tuple[Array, Array, Array, Array]:
+    """Slide the probe residual into the buffer and update beta on schedule.
+
+    The residual buffer is chronological (oldest first), length 2p. Every p steps once
+    `step >= 2p`, beta is updated from the ratio of squared-residual sums over the two
+    adjacent length-p windows (Appendix D of the reference). Off-schedule steps only
+    slide the buffer. All arithmetic runs every step; writes are gated with `jnp.where`
+    (a Python branch would be illegal under jit).
+
+    Args:
+        residual_buffer: chronological float buffer of length 2p.
+        probe_res_norm: the current step's probe residual norm (scalar).
+        r_hat: running convergence-rate estimate (scalar).
+        beta: current decay factor (scalar).
+        checkpoint_idx: adaptive-beta checkpoint counter (int scalar, >= 1).
+        step: current step index (int scalar, pre-increment).
+        p: lookback window length.
+
+    Returns:
+        Tuple (new_buffer, new_r_hat, new_beta, new_checkpoint_idx).
+    """
+    new_buffer = jnp.concatenate([residual_buffer[1:], probe_res_norm[None]])
+
+    window_tp = new_buffer[0:p]
+    window_t = new_buffer[p : 2 * p]
+    # small epsilon guards the early (partially-zero) buffer; gated out anyway.
+    r_ip = jnp.sum(window_t**2) / (jnp.sum(window_tp**2) + 1e-30)
+
+    n_old = checkpoint_idx.astype(r_hat.dtype)
+    n_new = n_old + 1.0
+    alph = jnp.power(n_old, jnp.log(n_old)) / jnp.power(n_new, jnp.log(n_new))
+
+    r_hat_new = alph * r_hat + (1.0 - alph) * jnp.minimum(1.0, r_ip)
+    rho = jnp.clip(1.0 - jnp.power(r_hat_new, 1.0 / p), a_min=0.0)
+    beta_new = (1.0 - rho) / (1.0 + rho)
+
+    do_update = (step % p == 0) & (step >= 2 * p)
+    new_beta = jnp.where(do_update, beta_new, beta)
+    new_r_hat = jnp.where(do_update, r_hat_new, r_hat)
+    new_checkpoint_idx = jnp.where(do_update, checkpoint_idx + 1, checkpoint_idx)
+    return new_buffer, new_r_hat, new_beta, new_checkpoint_idx

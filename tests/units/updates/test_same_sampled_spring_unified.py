@@ -11,6 +11,7 @@ import numpy as np
 # vmcnet.updates first avoids that import-order conflict.
 from vmcnet.updates.same_sampled_spring_unified import (
     SameSampledSPRINGUnifiedState,
+    _adaptive_beta_update,
     _build_operators,
     _draw_unit_norm_like,
 )
@@ -118,3 +119,80 @@ def test_T_matches_base_spring_construction():
     T = T + ones @ ones.T / nchains
     T = (T + T.T) / 2
     np.testing.assert_allclose(T_reconstructed, T, rtol=1e-5, atol=1e-6)
+
+
+def _numpy_adaptive_beta(buffer, res, r_hat, beta, ckpt, step, p):
+    """Numpy reference for the adaptive-beta schedule used to cross-check the jax op."""
+    buf = np.concatenate([np.asarray(buffer)[1:], [float(res)]])
+    do_update = (step % p == 0) and (step >= 2 * p)
+    if not do_update:
+        return buf, float(r_hat), float(beta), int(ckpt)
+    window_tp = buf[0:p]
+    window_t = buf[p : 2 * p]
+    r_ip = np.sum(window_t**2) / np.sum(window_tp**2)
+    n_old = float(ckpt)
+    n_new = n_old + 1.0
+    alph = (n_old ** np.log(n_old)) / (n_new ** np.log(n_new))
+    r_hat_new = alph * r_hat + (1.0 - alph) * min(1.0, r_ip)
+    rho = max(0.0, 1.0 - r_hat_new ** (1.0 / p))
+    beta_new = (1.0 - rho) / (1.0 + rho)
+    return buf, r_hat_new, beta_new, ckpt + 1
+
+
+def test_adaptive_beta_slides_buffer_but_no_update_before_2p():
+    """Test that the buffer slides but beta/r_hat/checkpoint stay put before 2p."""
+    p = 3
+    buffer = jnp.arange(2 * p, dtype=jnp.float32)  # [0,1,2,3,4,5]
+    out_buf, out_rhat, out_beta, out_ckpt = _adaptive_beta_update(
+        buffer,
+        jnp.array(9.0),
+        jnp.array(1.0),
+        jnp.array(0.9),
+        jnp.array(1, jnp.int32),
+        jnp.array(2, jnp.int32),
+        p,
+    )
+    # step=2 (< 2p=6): buffer slides, everything else unchanged
+    np.testing.assert_allclose(out_buf, np.array([1, 2, 3, 4, 5, 9]))
+    np.testing.assert_allclose(out_beta, 0.9)
+    np.testing.assert_allclose(out_rhat, 1.0)
+    assert int(out_ckpt) == 1
+
+
+def test_adaptive_beta_updates_at_trigger_matches_numpy():
+    """Test that _adaptive_beta_update matches the numpy reference at a trigger step."""
+    p = 3
+    rng = np.random.default_rng(0)
+    buffer = jnp.asarray(rng.uniform(0.1, 1.0, size=2 * p), dtype=jnp.float32)
+    res, r_hat, beta, ckpt, step = 0.4, 0.8, 0.9, 1, 2 * p  # step==6 triggers
+
+    got = _adaptive_beta_update(
+        buffer,
+        jnp.array(res),
+        jnp.array(r_hat),
+        jnp.array(beta),
+        jnp.array(ckpt, jnp.int32),
+        jnp.array(step, jnp.int32),
+        p,
+    )
+    exp = _numpy_adaptive_beta(buffer, res, r_hat, beta, ckpt, step, p)
+    np.testing.assert_allclose(got[0], exp[0], rtol=1e-6)
+    np.testing.assert_allclose(got[1], exp[1], rtol=1e-5)
+    np.testing.assert_allclose(got[2], exp[2], rtol=1e-5)
+    assert int(got[3]) == exp[3]
+
+
+def test_adaptive_beta_is_jittable():
+    """Test that _adaptive_beta_update runs under jax.jit without error."""
+    p = 3
+    f = jax.jit(lambda b, r, rh, be, c, s: _adaptive_beta_update(b, r, rh, be, c, s, p))
+    buffer = jnp.ones(2 * p)
+    out = f(
+        buffer,
+        jnp.array(1.0),
+        jnp.array(1.0),
+        jnp.array(0.9),
+        jnp.array(1, jnp.int32),
+        jnp.array(6, jnp.int32),
+    )
+    assert out[2].shape == ()  # beta scalar, no crash under jit
