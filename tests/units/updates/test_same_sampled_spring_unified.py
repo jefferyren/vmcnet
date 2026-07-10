@@ -13,6 +13,7 @@ from ml_collections import ConfigDict
 from vmcnet.updates.same_sampled_spring_unified import (
     SameSampledSPRINGUnifiedState,
     _adaptive_beta_update,
+    _adaptive_eta_main,
     _build_operators,
     _draw_unit_norm_like,
     get_same_sampled_spring_unified_step,
@@ -220,6 +221,47 @@ def test_adaptive_beta_is_jittable():
         jnp.array(6, jnp.int32),
     )
     assert out[2].shape == ()  # beta scalar, no crash under jit
+
+
+def test_adaptive_eta_main_off_returns_scheduled_lr():
+    """With adaptive_eta off, eta_main is just the scheduled lr (base SPRING)."""
+    lr = jnp.array(0.023)
+    out = _adaptive_eta_main(lr, base_lr=0.05, beta=jnp.array(0.9), adaptive_eta=False)
+    np.testing.assert_allclose(out, 0.023)
+
+
+def test_adaptive_eta_main_constant_schedule_matches_pinn_form():
+    """Constant schedule (decay == 1): eta_main == 1 - beta*(1 - eta0)."""
+    base_lr, beta = 0.05, 0.9
+    out = _adaptive_eta_main(
+        jnp.array(base_lr), base_lr=base_lr, beta=jnp.array(beta), adaptive_eta=True
+    )
+    np.testing.assert_allclose(out, 1.0 - beta * (1.0 - base_lr), rtol=1e-6)
+
+
+def test_adaptive_eta_main_applies_decay_as_outer_factor():
+    """A decayed lr scales eta_main by the decay factor (outer multiplier)."""
+    base_lr, beta = 0.05, 0.9
+    # lr(t) = half of base_lr -> decay factor 0.5
+    out = _adaptive_eta_main(
+        jnp.array(0.5 * base_lr),
+        base_lr=base_lr,
+        beta=jnp.array(beta),
+        adaptive_eta=True,
+    )
+    expected = 0.5 * (1.0 - beta * (1.0 - base_lr))
+    np.testing.assert_allclose(out, expected, rtol=1e-6)
+
+
+def test_adaptive_eta_main_anneals_to_zero_not_one_minus_beta():
+    """As lr(t) -> 0 the step anneals to 0 (outer decay), NOT plateauing at 1-beta."""
+    base_lr, beta = 0.05, 0.9
+    tiny = _adaptive_eta_main(
+        jnp.array(1e-8), base_lr=base_lr, beta=jnp.array(beta), adaptive_eta=True
+    )
+    # ~0, and far below the 1-beta=0.1 plateau the inner-decay form would give
+    assert float(tiny) < 1e-6
+    assert float(tiny) < 0.5 * (1.0 - beta)
 
 
 def _zeros_like(params):

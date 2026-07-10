@@ -22,8 +22,8 @@ reference algorithm but expressed in vmcnet's JAX conventions. It is
 - The probe's residual norm history feeds an **adaptive-β schedule** (Appendix D of
   the reference): every `p` steps it estimates the linear-convergence rate `ρ` of the
   probe system and sets `β = (1−ρ)/(1+ρ)`.
-- Optionally, an **adaptive step size** `η_main = 1 − β·(1 − η)` (and, if requested,
-  an adaptive probe step) replaces the constant base step.
+- Optionally, an **adaptive step size** `η_main = decay(t)·[1 − β·(1 − η₀)]` (and, if
+  requested, an adaptive probe step) replaces the constant base step. See decision 2.
 
 **Decisions locked with the user (2026-07-02):**
 
@@ -31,10 +31,17 @@ reference algorithm but expressed in vmcnet's JAX conventions. It is
    as config toggles. Drop the reference's `grid_line_search` (a PINN-repo feature not
    present in vmcnet SPRING); use vmcnet's existing learning-rate schedule +
    `constrain_norm` instead.
-2. **`adaptive_eta` wraps the scheduled LR:** `η_main = 1 − β·(1 − lr(step))`, where
-   `lr(step)` is vmcnet's `learning_rate_schedule` evaluated at the current step. This
-   reduces exactly to base SPRING when `adaptive_eta=False`. **This choice must be
-   documented with an inline comment in the code.**
+2. **`adaptive_eta` applies the schedule's decay as an OUTER factor** (revised
+   2026-07-10 per PI feedback): `η_main = decay(t)·[1 − β·(1 − η₀)]`, where `η₀ = lr(0)`
+   is the base learning rate and `decay(t) = lr(t)/η₀` is the schedule's decay factor.
+   This keeps the step **annealing toward 0** under a decaying (`inverse_time`) schedule
+   and, once β stabilizes, decaying in step with the schedule. (The earlier form
+   `η_main = 1 − β·(1 − lr(t))` plugged the already-decayed `lr` *inside* the bracket,
+   which plateaus the step at `1 − β` as `lr → 0` — undesirable given the codebase's
+   default is the decaying `inverse_time` schedule.) Under a `constant` schedule
+   `decay(t)=1`, so it reduces to `1 − β·(1 − η₀)`, the PINN reference's form. Reduces
+   exactly to base SPRING when `adaptive_eta=False`. **Documented with an inline comment
+   in the code (`_adaptive_eta_main`).**
 3. **Match existing SPRING for devices:** use vmcnet SPRING's per-device (local)
    centering / `T`-matrix convention. The probe uses the *identical* local operator so
    the two solves stay consistent. Correct multi-device support is explicitly out of
@@ -112,10 +119,12 @@ rhs_main    = epsilon_bar - apply_A(beta * phi)        # = epsilon_tilde (spring
 dual_main   = solve(rhs_main, damping)
 phi_new     = tree_add(apply_AT(dual_main), beta * phi)  # dtheta/sqrtN + mu*prev  (spring.py:179-181)
 
-# --- adaptive_eta: eta_main = 1 - beta*(1 - lr(step)), wrapping the SCHEDULED lr ---
-# adaptive_eta/adaptive_probe are STATIC config flags -> plain Python branches (not jnp.where).
-lr       = learning_rate_schedule(state.step)
-eta_main = (1.0 - beta * (1.0 - lr)) if adaptive_eta else lr
+# --- adaptive_eta: decay applied as an OUTER factor (revised 2026-07-10 per PI) ---
+# eta0 = lr(0) (base LR); decay(t) = lr(t)/eta0. adaptive_eta/adaptive_probe are STATIC
+# config flags -> plain Python branches (not jnp.where).
+base_lr  = learning_rate_schedule(0)                       # eta0
+lr       = learning_rate_schedule(state.step)              # lr(t)
+eta_main = (lr / base_lr) * (1.0 - beta * (1.0 - base_lr)) if adaptive_eta else lr
 
 updates = multiply_tree_by_scalar(phi_new, -eta_main)  # params -= eta_main * phi_new
 if constrain_norm:
@@ -264,7 +273,7 @@ overrides.
     # override independently.
     "probe_lr": -1.0,
     "probe_damping": 1e-3,     # probe normal-equation damping (defaults to `damping`)
-    "adaptive_eta": False,     # eta_main = 1 - beta*(1 - lr(step))
+    "adaptive_eta": False,     # eta_main = decay(t)*(1 - beta*(1 - eta0))  (outer decay)
     "adaptive_probe": False,   # probe uses eta_main instead of probe_lr
 },
 ```

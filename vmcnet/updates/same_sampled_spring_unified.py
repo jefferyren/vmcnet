@@ -183,6 +183,36 @@ def _adaptive_beta_update(
     return new_buffer, new_r_hat, new_beta, new_checkpoint_idx
 
 
+def _adaptive_eta_main(
+    lr: Array, base_lr: float, beta: Array, adaptive_eta: bool
+) -> Array:
+    """Main step size, applying the schedule's decay as an OUTER factor.
+
+    When ``adaptive_eta`` is False this is just ``lr`` (== base SPRING). When True it is
+    ``decay(t) * (1 - beta * (1 - eta0))`` where ``eta0 = base_lr`` is the base learning
+    rate (``lr`` at ``t == 0``) and ``decay(t) = lr / base_lr`` is the schedule's decay
+    factor. Applying the decay OUTSIDE the ``1 - beta * (1 - .)`` term keeps the step
+    annealing toward 0 under a decaying (e.g. inverse_time) schedule, and -- once beta
+    stabilizes -- decaying in step with the schedule. Plugging the already-decayed
+    ``lr`` INSIDE the term instead would plateau at ``1 - beta`` as ``lr -> 0``.
+    Under a constant schedule ``decay(t) == 1``, so this reduces to
+    ``1 - beta * (1 - eta0)`` (the PINN reference's adaptive-eta form).
+
+    Args:
+        lr: the scheduled learning rate at the current step, ``lr(t)``.
+        base_lr: the base learning rate ``eta0 == lr(0)`` (a static scalar).
+        beta: the current (dynamic) decay factor / momentum.
+        adaptive_eta: if True, use the outer-decay adaptive form; else return ``lr``.
+
+    Returns:
+        The main step size ``eta_main``.
+    """
+    if not adaptive_eta:
+        return lr
+    decay_factor = lr / base_lr
+    return decay_factor * (1.0 - beta * (1.0 - base_lr))
+
+
 def get_same_sampled_spring_unified_step(
     log_psi_apply: ModelApply[P],
     learning_rate_schedule: LearningRateSchedule,
@@ -211,13 +241,17 @@ def get_same_sampled_spring_unified_step(
         probe_damping: additive damping for the probe normal equation.
         p: adaptive-beta lookback window.
         probe_lr: base probe step (used when adaptive_probe is False).
-        adaptive_eta: if True, eta_main = 1 - beta*(1 - lr(step)).
+        adaptive_eta: if True, eta_main = decay(t) * (1 - beta*(1 - eta0)) with
+            eta0 = lr(0) and decay(t) = lr(t)/eta0 (see _adaptive_eta_main); else lr(t).
         adaptive_probe: if True, the probe step uses eta_main instead of probe_lr.
 
     Returns:
         The step kernel described above.
     """
     kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+    # eta0: the base learning rate (lr at t=0), used by the adaptive-eta scheme to
+    # apply the schedule's decay as an outer factor. Evaluated once, eagerly.
+    base_lr = float(learning_rate_schedule(jnp.array(0)))
 
     def step(
         centered_local_energies: Array,
@@ -249,11 +283,13 @@ def get_same_sampled_spring_unified_step(
         step_primal = apply_AT(dual_main)
         phi_new = jax.tree_map(lambda s, ph: s + beta * ph, step_primal, state.phi)
 
-        # eta_main wraps the SCHEDULED learning rate (design decision): with
-        # adaptive_eta it is 1 - beta*(1 - lr(step)), else just lr(step). This reduces
-        # to base SPRING exactly when adaptive_eta is False.
+        # eta_main: with adaptive_eta, the schedule's decay is applied as an OUTER
+        # factor -- eta_main = decay(t) * (1 - beta*(1 - eta0)) -- so the step still
+        # anneals toward 0 under a decaying schedule (rather than plateauing at 1-beta).
+        # Without adaptive_eta this is just lr(step), i.e. base SPRING. See
+        # _adaptive_eta_main for the full rationale.
         lr = learning_rate_schedule(state.step)
-        eta_main = (1.0 - beta * (1.0 - lr)) if adaptive_eta else lr
+        eta_main = _adaptive_eta_main(lr, base_lr, beta, adaptive_eta)
         updates = multiply_tree_by_scalar(phi_new, -eta_main)
 
         # ---- probe: self-contained synthetic solve on the SAME operators ----
