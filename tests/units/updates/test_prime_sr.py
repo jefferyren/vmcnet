@@ -8,7 +8,9 @@ from vmcnet.updates.prime_sr import (
     PRIMESRState,
     _adaptive_mu,
     _spectral_indicators,
+    get_prime_sr_step,
 )
+from vmcnet.updates.spring import get_spring_step
 
 
 def test_state_namedtuple_fields():
@@ -100,3 +102,138 @@ def test_adaptive_mu_gated_to_zero_without_valid_cache():
     )
     np.testing.assert_allclose(float(mu), 0.0)
     np.testing.assert_allclose(float(bt), 0.0)
+
+
+def _log_psi_apply(params, x):
+    """Toy log|psi|: a small tanh MLP mapping (N, 2) -> (N,)."""
+    h = jnp.tanh(x @ params["w1"] + params["b1"])  # (N, 3)
+    return jnp.squeeze(h @ params["w2"] + params["b2"], axis=-1)  # (N,)
+
+
+def _setup(seed=0, nchains=9):
+    """Draw a small random params pytree and positions batch."""
+    key = jax.random.PRNGKey(seed)
+    kp, kx = jax.random.split(key)
+    params = {
+        "w1": 0.5 * jax.random.normal(jax.random.fold_in(kp, 1), (2, 3)),
+        "b1": 0.5 * jax.random.normal(jax.random.fold_in(kp, 2), (3,)),
+        "w2": 0.5 * jax.random.normal(jax.random.fold_in(kp, 3), (3, 1)),
+        "b2": 0.5 * jax.random.normal(jax.random.fold_in(kp, 4), (1,)),
+    }
+    positions = jax.random.normal(kx, (nchains, 2))
+    return params, positions
+
+
+def _fresh_state(params, nchains):
+    """Build the step-0 PRIMESRState (zeros + alpha_prev_ceil sentinel 0)."""
+    return PRIMESRState(
+        phi=jax.tree_map(jnp.zeros_like, params),
+        V_prev_alpha=jnp.zeros((nchains, nchains)),
+        alpha_prev_ceil=jnp.array(0, jnp.int32),
+        step=jnp.array(0, jnp.int32),
+        mu=jnp.array(0.0),
+        alpha=jnp.array(0.0),
+        rank=jnp.array(0.0),
+        beta_tilde=jnp.array(0.0),
+    )
+
+
+def test_first_step_matches_base_spring_mu_zero():
+    """Step 0 has mu == 0 and phi equal to base SPRING's mu=0 update direction."""
+    nchains = 9
+    params, positions = _setup(nchains=nchains)
+    damping = 1e-2
+    centered = jax.random.normal(jax.random.PRNGKey(8), (nchains,))
+
+    base_step = get_spring_step(_log_psi_apply, damping=damping, mu=0.0)
+    base_grad = base_step(
+        centered, params, jax.tree_map(jnp.zeros_like, params), positions
+    )
+
+    step_fn = get_prime_sr_step(_log_psi_apply, lambda t: 0.05, damping=damping)
+    updates, new_state = step_fn(
+        centered, params, positions, _fresh_state(params, nchains)
+    )
+
+    np.testing.assert_allclose(float(new_state.mu), 0.0)
+    # D1: prime_sr omits the ones-term from the eigendecomposed matrix, so the
+    # two solves agree only up to float32 eigendecomposition differences.
+    for a, b in zip(
+        jax.tree_util.tree_leaves(new_state.phi),
+        jax.tree_util.tree_leaves(base_grad),
+    ):
+        np.testing.assert_allclose(a, b, rtol=1e-4, atol=1e-5)
+    # updates are exactly -lr * phi
+    for u, ph in zip(
+        jax.tree_util.tree_leaves(updates),
+        jax.tree_util.tree_leaves(new_state.phi),
+    ):
+        np.testing.assert_allclose(u, -0.05 * ph, rtol=1e-6, atol=1e-8)
+
+
+def test_identical_T_drives_beta_tilde_to_upper_bound():
+    """A second step on identical (params, positions) saturates beta_tilde and mu."""
+    nchains = 9
+    params, positions = _setup(nchains=nchains)
+    centered = jax.random.normal(jax.random.PRNGKey(8), (nchains,))
+    step_fn = get_prime_sr_step(_log_psi_apply, lambda t: 0.05, damping=1e-2)
+
+    _, state1 = step_fn(centered, params, positions, _fresh_state(params, nchains))
+    _, state2 = step_fn(centered, params, positions, state1)
+
+    # same T both steps -> identical principal subspace -> overlap saturates
+    m = min(int(state1.alpha_prev_ceil), int(state2.alpha_prev_ceil))
+    np.testing.assert_allclose(float(state2.beta_tilde), np.sqrt(m), rtol=1e-4)
+    np.testing.assert_allclose(float(state2.mu), 1.0, atol=1e-5)
+
+
+def test_second_step_matches_base_spring_with_frozen_mu():
+    """A perturbed-positions second step equals base SPRING run at mu = mu_2."""
+    nchains = 9
+    params, positions = _setup(nchains=nchains)
+    damping = 1e-2
+    centered = jax.random.normal(jax.random.PRNGKey(8), (nchains,))
+    step_fn = get_prime_sr_step(_log_psi_apply, lambda t: 0.05, damping=damping)
+
+    _, state1 = step_fn(centered, params, positions, _fresh_state(params, nchains))
+    positions2 = positions + 0.1 * jax.random.normal(
+        jax.random.PRNGKey(9), positions.shape
+    )
+    _, state2 = step_fn(centered, params, positions2, state1)
+
+    mu2 = float(state2.mu)
+    assert 0.0 < mu2 <= 1.0
+
+    base_step = get_spring_step(_log_psi_apply, damping=damping, mu=mu2)
+    base_grad = base_step(centered, params, state1.phi, positions2)
+    for a, b in zip(
+        jax.tree_util.tree_leaves(state2.phi),
+        jax.tree_util.tree_leaves(base_grad),
+    ):
+        np.testing.assert_allclose(a, b, rtol=1e-4, atol=1e-5)
+
+
+def test_step_is_jittable_and_advances_state():
+    """The step kernel runs under jax.jit, advances counters, caches the subspace."""
+    nchains = 8
+    params, positions = _setup(nchains=nchains)
+    centered = jax.random.normal(jax.random.PRNGKey(5), (nchains,))
+    step_fn = jax.jit(get_prime_sr_step(_log_psi_apply, lambda t: 0.05, damping=1e-3))
+
+    updates, state1 = step_fn(
+        centered, params, positions, _fresh_state(params, nchains)
+    )
+
+    assert jax.tree_util.tree_structure(updates) == jax.tree_util.tree_structure(
+        params
+    )
+    assert int(state1.step) == 1
+    assert int(state1.alpha_prev_ceil) >= 1  # cache now valid
+    assert state1.V_prev_alpha.shape == (nchains, nchains)
+    assert 1 <= int(state1.rank) <= nchains
+    assert float(state1.alpha) >= 1.0
+    # masked columns are exactly zero
+    n_keep = int(state1.alpha_prev_ceil)
+    np.testing.assert_allclose(state1.V_prev_alpha[:, n_keep:], 0.0)
+    for leaf in jax.tree_util.tree_leaves(state1.phi):
+        assert bool(jnp.all(jnp.isfinite(leaf)))

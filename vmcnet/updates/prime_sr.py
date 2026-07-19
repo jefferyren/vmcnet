@@ -145,3 +145,93 @@ def _adaptive_mu(
     mu = jnp.clip(1.0 - inner1 * inner2, 0.0, 1.0)
     valid = (alpha_prev_ceil > 0) & (rank > 0)
     return jnp.where(valid, mu, 0.0), jnp.where(valid, beta_tilde, 0.0)
+
+
+def get_prime_sr_step(
+    log_psi_apply: ModelApply[P],
+    learning_rate_schedule: LearningRateSchedule,
+    damping: chex.Scalar = 0.001,
+) -> Callable[[Array, P, Array, PRIMESRState], Tuple[P, PRIMESRState]]:
+    """Get the PRIME-SR step kernel.
+
+    Returns a pure function `step(centered_energies, params, positions, state)`
+    returning `(updates, new_state)`, where `updates` is the parameter delta
+    already scaled by `-lr(state.step)`. The SPRING solve reuses the same
+    eigendecomposition that produces the momentum indicators.
+
+    Args:
+        log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
+        learning_rate_schedule: step -> learning rate.
+        damping: additive damping lambda in (T + lambda I).
+
+    Returns:
+        The step kernel described above.
+    """
+    kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+
+    def prime_sr_step(
+        centered_energies: Array,
+        params: P,
+        positions: Array,
+        state: PRIMESRState,
+    ) -> Tuple[P, PRIMESRState]:
+        nchains = positions.shape[0]
+        sqrt_n = jnp.sqrt(nchains)
+
+        # T = Ohat Ohat^T as in spring.py, but WITHOUT the ones-term (spec D1):
+        # the ones-term's spurious (eigenvalue 1, constant eigenvector) pair
+        # would pollute rank/alpha/V_alpha/beta_tilde, and the solve is
+        # unchanged because zeta is exactly mean-zero. Negative eigenvalues
+        # are clamped as in spring.py.
+        T = kernel_fn(positions, positions, "ntk", params) / nchains
+        T = T - jnp.mean(T, axis=0, keepdims=True)
+        T = T - jnp.mean(T, axis=1, keepdims=True)
+        T = (T + T.T) / 2
+        s2, V = jnp.linalg.eigh(T)
+        s2 = jnp.maximum(jnp.flip(s2, 0), 0.0)
+        V = jnp.flip(V, 1)
+
+        rank, alpha, alpha_ceil = _spectral_indicators(s2, nchains)
+        # column-mask the leading ceil(alpha) eigenvectors (dynamic slicing is
+        # illegal under jit)
+        V_alpha = V * (jnp.arange(nchains)[None, :] < alpha_ceil)
+        mu, beta_tilde = _adaptive_mu(
+            alpha, rank, alpha_ceil, V_alpha, state.V_prev_alpha, state.alpha_prev_ceil
+        )
+
+        # SPRING update with adaptive mu (same math as spring.py:140-181)
+        mu_phi = multiply_tree_by_scalar(state.phi, mu)
+        epsilon_bar = centered_energies / sqrt_n
+        O_prev = (
+            jax.jvp(
+                log_psi_apply,
+                (params, positions),
+                (mu_phi, jnp.zeros_like(positions)),
+            )[1]
+            / sqrt_n
+        )
+        Ohat_prev = O_prev - jnp.mean(O_prev, axis=0, keepdims=True)
+        epsilon_tilde = epsilon_bar - Ohat_prev
+
+        zeta = V @ jnp.diag(1 / (s2 + damping)) @ V.T @ epsilon_tilde
+        zeta_hat = zeta - jnp.mean(zeta)
+        dtheta_residual = jax.vjp(log_psi_apply, params, positions)[1](zeta_hat)[0]
+        phi_new = jax.tree_map(lambda dt, mp: dt / sqrt_n + mp, dtheta_residual, mu_phi)
+
+        updates = multiply_tree_by_scalar(phi_new, -learning_rate_schedule(state.step))
+
+        # keep the previous subspace cache on a (pathological) rank-0 step
+        keep = rank > 0
+        new_state = PRIMESRState(
+            phi=phi_new,
+            V_prev_alpha=jnp.where(keep, V_alpha, state.V_prev_alpha),
+            alpha_prev_ceil=jnp.where(keep, alpha_ceil, state.alpha_prev_ceil),
+            step=state.step + 1,
+            mu=mu,
+            alpha=alpha,
+            rank=rank.astype(alpha.dtype),
+            beta_tilde=beta_tilde,
+        )
+        return updates, new_state
+
+    return prime_sr_step
