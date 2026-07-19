@@ -3,12 +3,14 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from ml_collections import ConfigDict
 
 from vmcnet.updates.prime_sr import (
     PRIMESRState,
     _adaptive_mu,
     _spectral_indicators,
     get_prime_sr_step,
+    initialize_prime_sr,
 )
 from vmcnet.updates.spring import get_spring_step
 
@@ -236,4 +238,61 @@ def test_step_is_jittable_and_advances_state():
     n_keep = int(state1.alpha_prev_ceil)
     np.testing.assert_allclose(state1.V_prev_alpha[:, n_keep:], 0.0)
     for leaf in jax.tree_util.tree_leaves(state1.phi):
+        assert bool(jnp.all(jnp.isfinite(leaf)))
+
+
+def _energy_and_statistics_fn(params, positions):
+    """Deterministic fake local energies so the test needs no MCMC/physics."""
+    local_energies = jnp.sum(_log_psi_apply(params, positions)) * 0.0 + jnp.arange(
+        positions.shape[0], dtype=jnp.float32
+    )
+    energy = jnp.mean(local_energies)
+    stats = {
+        "variance": jnp.var(local_energies),
+        "energy_noclip": energy,
+        "variance_noclip": jnp.var(local_energies),
+    }
+    return energy, local_energies, stats
+
+
+def test_initialize_single_device_and_apply_advances_state():
+    """initialize_prime_sr builds a fresh state and one update works end-to-end."""
+    nchains = 8
+    params, positions = _setup(nchains=nchains)
+    data = positions  # get_position_fn is identity for this fake data
+
+    update_param_fn, opt_state = initialize_prime_sr(
+        _log_psi_apply,
+        _energy_and_statistics_fn,
+        params,
+        data,
+        get_position_fn=lambda d: d,
+        update_data_fn=lambda d, p_: d,
+        learning_rate_schedule=lambda t: 0.05,
+        optimizer_config=ConfigDict(
+            {
+                "learning_rate": 0.05,
+                "damping": 1e-3,
+                "constrain_norm": True,
+                "norm_constraint": 1e-3,
+            }
+        ),
+        record_param_l1_norm=False,
+        apply_pmap=False,  # single device: jitted, not pmapped
+    )
+
+    assert int(opt_state.step) == 0
+    assert int(opt_state.alpha_prev_ceil) == 0  # sentinel: no cached subspace
+    assert opt_state.V_prev_alpha.shape == (nchains, nchains)
+
+    new_params, new_data, new_state, metrics, new_key = update_param_fn(
+        params, data, opt_state, jax.random.PRNGKey(0)
+    )
+    assert int(new_state.step) == 1
+    assert int(new_state.alpha_prev_ceil) >= 1
+    for k in ["energy", "variance", "mu", "alpha", "rank", "beta_tilde"]:
+        assert k in metrics, f"missing metric {k}"
+    np.testing.assert_allclose(float(metrics["mu"]), 0.0)  # first step
+    assert float(metrics["rank"]) >= 1.0
+    for leaf in jax.tree_util.tree_leaves(new_params):
         assert bool(jnp.all(jnp.isfinite(leaf)))

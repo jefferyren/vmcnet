@@ -235,3 +235,161 @@ def get_prime_sr_step(
         return updates, new_state
 
     return prime_sr_step
+
+
+def constrain_norm(grad: P, norm_constraint: chex.Numeric = 0.001) -> P:
+    """Euclidean norm constraint on the update (matches spring.py).
+
+    Args:
+        grad: the (params-shaped) update to constrain.
+        norm_constraint: the maximum allowed squared L2 norm.
+
+    Returns:
+        `grad`, rescaled down (never up) so its global squared L2 norm is at
+        most `norm_constraint`.
+    """
+    sq_norm_scaled_grads = tree_inner_product(grad, grad)
+    sq_norm_scaled_grads = pmean_if_pmap(sq_norm_scaled_grads)
+    norm_scale_factor = jnp.sqrt(norm_constraint / sq_norm_scaled_grads)
+    coefficient = jnp.minimum(norm_scale_factor, 1)
+    return multiply_tree_by_scalar(grad, coefficient)
+
+
+def construct_prime_sr_update_param_fn(
+    energy_and_statistics_fn: Callable,
+    optimizer_apply: Callable,
+    get_position_fn: GetPositionFromData[D],
+    update_data_fn: UpdateDataFn[D, P],
+    apply_pmap: bool = True,
+    record_param_l1_norm: bool = False,
+) -> UpdateParamFn[P, D, S]:
+    """Create the update_param_fn for PRIME-SR.
+
+    Args:
+        energy_and_statistics_fn: (params, positions) -> (energy,
+            local_energies, stats), where stats has keys "variance",
+            "energy_noclip", and "variance_noclip".
+        optimizer_apply: (energy, local_energies, params, optimizer_state,
+            data) -> (new_params, new_optimizer_state).
+        get_position_fn: gets the walker positions from the MCMC data.
+        update_data_fn: function which updates data for new params.
+        apply_pmap: whether to pmap (True) or jit (False) the returned fn.
+        record_param_l1_norm: whether to record the params L1 norm in metrics.
+
+    Returns:
+        Callable with signature
+            (params, data, optimizer_state, key)
+            -> (new_params, new_data, new_optimizer_state, metrics, key).
+        The metrics include the PRIME-SR diagnostics mu, alpha, rank, and
+        beta_tilde read from the new optimizer state.
+    """
+
+    def update_param_fn(params, data, optimizer_state, key):
+        position = get_position_fn(data)
+        energy, local_energies, stats = energy_and_statistics_fn(params, position)
+        params, optimizer_state = optimizer_apply(
+            energy, local_energies, params, optimizer_state, data
+        )
+        data = update_data_fn(data, params)
+
+        metrics = {"energy": energy, "variance": stats["variance"]}
+        metrics = update_metrics_with_noclip(
+            stats["energy_noclip"], stats["variance_noclip"], metrics
+        )
+        metrics.update(
+            {
+                "mu": optimizer_state.mu,
+                "alpha": optimizer_state.alpha,
+                "rank": optimizer_state.rank,
+                "beta_tilde": optimizer_state.beta_tilde,
+            }
+        )
+        if record_param_l1_norm:
+            metrics.update({"param_l1_norm": tree_reduce_l1(params)})
+        return params, data, optimizer_state, metrics, key
+
+    return make_traced_fn_with_single_metrics(update_param_fn, apply_pmap)
+
+
+def initialize_prime_sr(
+    log_psi_apply: ModelApply[P],
+    energy_and_statistics_fn: Callable,
+    params: P,
+    data: D,
+    get_position_fn: GetPositionFromData[D],
+    update_data_fn: UpdateDataFn[D, P],
+    learning_rate_schedule: LearningRateSchedule,
+    optimizer_config: ConfigDict,
+    record_param_l1_norm: bool = False,
+    apply_pmap: bool = True,
+) -> Tuple[UpdateParamFn[P, D, PRIMESRState], PRIMESRState]:
+    """Get an update param function and initial state for PRIME-SR.
+
+    Args:
+        log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
+        energy_and_statistics_fn: (params, positions) -> (energy,
+            local_energies, stats), where stats has keys "variance",
+            "energy_noclip", and "variance_noclip".
+        params: initial model parameters.
+        data: initial MCMC data; only used to size the cached eigenvector
+            matrix from the (per-device) positions batch.
+        get_position_fn: gets the walker positions from the MCMC data.
+        update_data_fn: function which updates data for new params.
+        learning_rate_schedule: step -> learning rate.
+        optimizer_config: ConfigDict with keys damping, constrain_norm, and
+            norm_constraint. There is intentionally no mu key: the momentum is
+            adaptive (paper Eq. 4.5).
+        record_param_l1_norm: whether to record the params L1 norm in metrics.
+        apply_pmap: whether to pmap (True) or jit (False) the returned update
+            fn and the initial state construction.
+
+    Returns:
+        Tuple (update_param_fn, optimizer_state).
+    """
+    step_fn = get_prime_sr_step(
+        log_psi_apply, learning_rate_schedule, optimizer_config.damping
+    )
+
+    def init_state(local_params: P, local_positions: Array) -> PRIMESRState:
+        """Build the step-0 state sized from the per-device positions batch."""
+        dtype = jax.flatten_util.ravel_pytree(local_params)[0].dtype
+        nchains = local_positions.shape[0]
+        return PRIMESRState(
+            phi=jax.tree_map(jnp.zeros_like, local_params),
+            V_prev_alpha=jnp.zeros((nchains, nchains), dtype=dtype),
+            alpha_prev_ceil=jnp.array(0, jnp.int32),
+            step=jnp.array(0, jnp.int32),
+            mu=jnp.zeros((), dtype),
+            alpha=jnp.zeros((), dtype),
+            rank=jnp.zeros((), dtype),
+            beta_tilde=jnp.zeros((), dtype),
+        )
+
+    def optimizer_apply(energy, local_energies, params, optimizer_state, data):
+        """Apply one PRIME-SR update to the params."""
+        positions = get_position_fn(data)
+        centered_local_energies = local_energies - energy
+        updates, optimizer_state = step_fn(
+            centered_local_energies, params, positions, optimizer_state
+        )
+        if optimizer_config.constrain_norm:
+            updates = constrain_norm(updates, optimizer_config.norm_constraint)
+        params = optax.apply_updates(params, updates)
+        return params, optimizer_state
+
+    update_param_fn = construct_prime_sr_update_param_fn(
+        energy_and_statistics_fn,
+        optimizer_apply,
+        get_position_fn=get_position_fn,
+        update_data_fn=update_data_fn,
+        record_param_l1_norm=record_param_l1_norm,
+        apply_pmap=apply_pmap,
+    )
+
+    positions = get_position_fn(data)
+    if apply_pmap:
+        optimizer_state = utils.distribute.pmap(init_state)(params, positions)
+    else:
+        optimizer_state = init_state(params, positions)
+
+    return update_param_fn, optimizer_state
