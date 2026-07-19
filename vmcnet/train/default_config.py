@@ -299,7 +299,7 @@ def get_default_vmc_config() -> Dict:
                 "learning_rate": 5e-2,
                 "learning_decay_rate": 1e-4,
                 # SPRING hyperparams (mu is the INITIAL beta)
-                "mu": 0.9,
+                "mu": 0.0,
                 "damping": 1e-3,
                 "constrain_norm": True,
                 "norm_constraint": 1e-3,

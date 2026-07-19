@@ -1,0 +1,51 @@
+{
+  "os":  "macOS-26.1-arm64-arm-64bit",
+  "python":  "CPython 3.12.13",
+  "startedAt":  "2026-07-19T17:25:03.527552Z",
+  "args":  [
+    "--config.model.ferminet.ndeterminants=1",
+    "--config.model.ferminet.backflow.ndense_list=((32,16),(32,16),(32,16),(32,))",
+    "--config.vmc.nchains=100",
+    "--config.vmc.nburn=1000",
+    "--config.vmc.nepochs=1000",
+    "--config.eval.nchains=100",
+    "--config.eval.nburn=100",
+    "--config.eval.nepochs=1000",
+    "--config.vmc.optimizer_type=same_sampled_spring_unified",
+    "--config.vmc.optimizer.same_sampled_spring_unified.adaptive_eta=True",
+    "--config.wandb.mode=online",
+    "--config.wandb.project=vmcnet_spring",
+    "--config.wandb.name=ssu_adaptive_eta_v2"
+  ],
+  "program":  "/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/vmc-molecule",
+  "git":  {
+    "remote":  "https://github.com/jefferyren/vmcnet.git",
+    "commit":  "37e707f6b743b75e7f9f8d5bb149c80b3f4f0949"
+  },
+  "email":  "ren27@berkeley.edu",
+  "root":  "/Users/jefferyren/Documents/SPRING Paper/vmcnet",
+  "host":  "macbookpro.lan",
+  "executable":  "/Users/jefferyren/anaconda3/envs/vmcnet-py312/bin/python3.12",
+  "cpu_count":  8,
+  "cpu_count_logical":  8,
+  "disk":  {
+    "/":  {
+      "total":  "494384795648",
+      "used":  "482558185472"
+    }
+  },
+  "memory":  {
+    "total":  "17179869184"
+  },
+  "apple":  {
+    "name":  "Apple M1 Pro",
+    "ecpuCores":  2,
+    "pcpuCores":  6,
+    "gpuCores":  14,
+    "memoryGb":  16,
+    "swapTotalBytes":  "8589934592",
+    "ramTotalBytes":  "17179869184",
+    "macModel":  "MacBookPro18,3"
+  },
+  "writerId":  "z2cd4zrwvrqs1etzoe8rvpus4c5st80z"
+}

@@ -437,6 +437,9 @@ def test_initialize_single_device_and_apply_reduces_state_step():
     )
     assert int(new_state.step) == 1
     assert "energy" in metrics and "variance" in metrics
+    # Adaptive momentum beta is logged as "mu" (PRIME-SR's key) plus r_hat.
+    assert np.isclose(float(metrics["mu"]), float(new_state.beta))
+    assert np.isclose(float(metrics["r_hat"]), float(new_state.r_hat))
     for leaf in jax.tree_util.tree_leaves(new_params):
         assert bool(jnp.all(jnp.isfinite(leaf)))
 
@@ -462,7 +465,7 @@ def test_default_config_has_block():
         "adaptive_probe",
     ]:
         assert k in block, f"missing config key {k}"
-    assert block["mu"] == 0.9
+    assert block["mu"] == 0.0
     assert block["probe_lr"] < 0  # sentinel
 
 

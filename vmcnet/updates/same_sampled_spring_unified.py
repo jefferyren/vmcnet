@@ -392,8 +392,10 @@ def construct_same_sampled_spring_unified_update_param_fn(
         params, and optimizer state. The signature of this function is
             (params, data, optimizer_state, key)
             -> (new_params, new_data, new_optimizer_state, metrics, key)
-        The function is pmapped if apply_pmap is True, and jitted if apply_pmap is
-        False.
+        The metrics include the adaptive momentum beta (logged as "mu", matching
+        PRIME-SR's key) and the convergence-rate estimate r_hat, both read from
+        the new optimizer state. The function is pmapped if apply_pmap is True,
+        and jitted if apply_pmap is False.
     """
 
     def update_param_fn(params, data, optimizer_state, key):
@@ -408,6 +410,8 @@ def construct_same_sampled_spring_unified_update_param_fn(
         metrics = update_metrics_with_noclip(
             stats["energy_noclip"], stats["variance_noclip"], metrics
         )
+        # The adaptive momentum beta is logged as "mu" to match PRIME-SR's key.
+        metrics.update({"mu": optimizer_state.beta, "r_hat": optimizer_state.r_hat})
         if record_param_l1_norm:
             metrics.update({"param_l1_norm": tree_reduce_l1(params)})
         return params, data, optimizer_state, metrics, key
