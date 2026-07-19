@@ -314,6 +314,17 @@ def get_default_vmc_config() -> Dict:
                 "adaptive_eta": False,  # eta_main = 1 - beta*(1 - lr(step))
                 "adaptive_probe": False,  # probe uses eta_main instead of probe_lr
             },
+            "prime_sr": {
+                # Learning rate settings
+                "schedule_type": "inverse_time",  # constant or inverse_time
+                "learning_rate": 2e-2,
+                "learning_decay_rate": 1e-4,
+                # PRIME-SR hyperparams. There is intentionally no mu: the
+                # momentum is adaptive (arXiv:2604.18357, Eq. 4.5).
+                "damping": 1e-3,
+                "constrain_norm": True,
+                "norm_constraint": 1e-3,
+            },
         },
     }
     return vmc_config

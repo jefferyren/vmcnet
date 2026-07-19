@@ -296,3 +296,35 @@ def test_initialize_single_device_and_apply_advances_state():
     assert float(metrics["rank"]) >= 1.0
     for leaf in jax.tree_util.tree_leaves(new_params):
         assert bool(jnp.all(jnp.isfinite(leaf)))
+
+
+def test_default_config_has_prime_sr_block():
+    """The default VMC config has a prime_sr block with paper defaults and no mu."""
+    from vmcnet.train.default_config import get_default_vmc_config
+
+    cfg = get_default_vmc_config()
+    block = cfg["optimizer"]["prime_sr"]
+    for k in [
+        "schedule_type",
+        "learning_rate",
+        "learning_decay_rate",
+        "damping",
+        "constrain_norm",
+        "norm_constraint",
+    ]:
+        assert k in block, f"missing config key {k}"
+    assert "mu" not in block  # tuning-free: momentum is adaptive
+    assert block["learning_rate"] == 2e-2
+    assert block["damping"] == 1e-3
+    assert block["norm_constraint"] == 1e-3
+
+
+def test_parse_optimizer_config_dispatches_prime_sr():
+    """The optimizer dispatcher recognizes the prime_sr optimizer_type."""
+    import inspect
+
+    from vmcnet.updates import parse_optimizer_config as poc
+
+    src = inspect.getsource(poc.initialize_optimizer)
+    assert '"prime_sr"' in src
+    assert hasattr(poc, "initialize_prime_sr")
