@@ -79,7 +79,7 @@ def test_adaptive_mu_matches_formula():
 
 
 def test_adaptive_mu_gated_to_zero_without_valid_cache():
-    """mu and beta_tilde are 0 when alpha_prev_ceil == 0 (sentinel) or rank == 0."""
+    """Both mu and beta_tilde are 0 when alpha_prev_ceil == 0 or rank == 0."""
     n = 4
     v = jnp.eye(n)
     # no valid previous subspace
@@ -226,9 +226,7 @@ def test_step_is_jittable_and_advances_state():
         centered, params, positions, _fresh_state(params, nchains)
     )
 
-    assert jax.tree_util.tree_structure(updates) == jax.tree_util.tree_structure(
-        params
-    )
+    assert jax.tree_util.tree_structure(updates) == jax.tree_util.tree_structure(params)
     assert int(state1.step) == 1
     assert int(state1.alpha_prev_ceil) >= 1  # cache now valid
     assert state1.V_prev_alpha.shape == (nchains, nchains)
