@@ -18,7 +18,11 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:GTX2080TI:1       # GPU type must match the QoS (else the job hangs on QOSMinGRES)
 #SBATCH --cpus-per-task=2            # Savio ratio: 2 cores per GTX2080TI, 8 per A40
-#SBATCH --time=48:00:00              # TODO: 100k+20k epochs may exceed this; time the smoke test first
+# Measured on a GTX2080TI at 200 epochs: spring 1.00x, prime_sr ~1.16x,
+# same_sampled_spring_unified ~1.32x -> 120k epochs lands at ~15-26h. 72h is
+# requested purely as headroom; savio3_gpu has MaxTime=UNLIMITED and
+# esmath_gpu3_normal has no MaxWall, so over-requesting costs nothing.
+#SBATCH --time=72:00:00
 #SBATCH --array=0-2
 #SBATCH --output=slurm-%x-%A_%a.out
 # NOTE: no --mem. Savio allocates memory proportionally to cores; an explicit
@@ -29,8 +33,14 @@
 set -eo pipefail
 
 # --- environment ---
-module load anaconda3
-source activate "/global/scratch/users/$USER/envs/vmcnet"
+# Deliberately NOT using `module load anaconda3` + `conda activate`. sbatch
+# exports the submitting shell's environment, so CONDA_PREFIX arrives already
+# set; `conda activate` then treats the env as active and skips its PATH edit,
+# while `module load anaconda3` has put the module's own python first. The
+# result is a silent fall-through to the wrong interpreter. The env is a
+# self-contained prefix, so putting its bin on PATH is sufficient and needs no
+# shell initialization.
+export PATH="/global/scratch/users/$USER/envs/vmcnet/bin:$PATH"
 set -u
 
 export WANDB_MODE=disabled           # runners.py calls wandb.login(); keep it a no-op

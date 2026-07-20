@@ -26,8 +26,14 @@
 set -eo pipefail
 
 # --- environment ---
-module load anaconda3
-source activate "/global/scratch/users/$USER/envs/vmcnet"
+# Deliberately NOT using `module load anaconda3` + `conda activate`. sbatch
+# exports the submitting shell's environment, so CONDA_PREFIX arrives already
+# set; `conda activate` then treats the env as active and skips its PATH edit,
+# while `module load anaconda3` has put the module's own python first. The
+# result is a silent fall-through to the wrong interpreter. The env is a
+# self-contained prefix, so putting its bin on PATH is sufficient and needs no
+# shell initialization.
+export PATH="/global/scratch/users/$USER/envs/vmcnet/bin:$PATH"
 set -u
 
 export WANDB_MODE=disabled           # runners.py calls wandb.login(); keep it a no-op
