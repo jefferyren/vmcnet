@@ -54,6 +54,9 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
         (x_shape,) = self.inputs_shapes
         return float(kfac_jax.utils.product(x_shape) // (x_shape[0] * x_shape[-1]))
 
+    # NOTE: kfac_jax 0.0.6 dropped `pmap_axis_name` from this method's signature
+    # (syncing is handled internally now). The override must match, or kfac's
+    # caller raises "missing 1 required positional argument: 'pmap_axis_name'".
     def update_curvature_matrix_estimate(
         self,
         state: kfac_jax.TwoKroneckerFactored.State,
@@ -61,7 +64,6 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
         ema_old: chex.Numeric,
         ema_new: chex.Numeric,
         batch_size: int,
-        pmap_axis_name: Optional[str],
     ) -> kfac_jax.TwoKroneckerFactored.State:
         estimation_data = dict(**estimation_data)
         (x,) = estimation_data["inputs"]
@@ -71,7 +73,7 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
         estimation_data["outputs_tangent"] = (dy.reshape([-1, dy.shape[-1]]),)
         batch_size = x.size // x.shape[-1]
         return super().update_curvature_matrix_estimate(
-            state, estimation_data, ema_old, ema_new, batch_size, pmap_axis_name
+            state, estimation_data, ema_old, ema_new, batch_size
         )
 
 

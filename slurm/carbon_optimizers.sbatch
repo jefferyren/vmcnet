@@ -13,7 +13,7 @@
 #SBATCH --job-name=carbon-optim
 #SBATCH --account=co_esmath
 #SBATCH --partition=savio3_gpu
-#SBATCH --qos=savio_normal           # TODO: confirm via `sacctmgr -p show associations user=$USER`
+#SBATCH --qos=esmath_gpu3_normal     # co_esmath condo QoS on savio3_gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:GTX2080TI:1       # GPU type must match the QoS (else the job hangs on QOSMinGRES)
