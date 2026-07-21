@@ -36,7 +36,15 @@ set -eo pipefail
 export PATH="/global/scratch/users/$USER/envs/vmcnet/bin:$PATH"
 set -u
 
-export WANDB_MODE=disabled           # runners.py calls wandb.login(); keep it a no-op
+# wandb: offline, not disabled. `disabled` records nothing at all and leaves
+# nothing to sync afterward; `offline` buffers the run under $WANDB_DIR for a
+# later `wandb sync` from the login node. The env var keeps the unconditional
+# wandb.login() in runners.py from reaching the network on a compute node, but
+# runners.py passes config.wandb.mode explicitly to wandb.init(), so the
+# --config.wandb.mode flag below is what actually sets the run's mode.
+export WANDB_MODE=offline
+export WANDB_DIR="/global/scratch/users/$USER/wandb"
+mkdir -p "$WANDB_DIR"
 
 cd "$SLURM_SUBMIT_DIR"
 
@@ -66,4 +74,8 @@ vmc-molecule \
   --config.vmc.checkpoint_every=1000 \
   --config.eval.nepochs=0 \
   --config.save_to_current_datetime_subfolder=False \
-  --config.subfolder_name=carbon_prelim
+  --config.subfolder_name=carbon_prelim \
+  --config.wandb.mode=offline \
+  --config.wandb.project=vmcnet-carbon \
+  --config.wandb.group=carbon \
+  --config.wandb.name=carbon_prelim
