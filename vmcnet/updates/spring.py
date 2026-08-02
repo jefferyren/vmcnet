@@ -20,6 +20,7 @@ from vmcnet.utils.typing import UpdateDataFn, GetPositionFromData, LearningRateS
 
 from .update_param_fns import (
     UpdateParamFn,
+    get_update_norm_diagnostics,
     make_traced_fn_with_single_metrics,
     update_metrics_with_noclip,
 )
@@ -28,7 +29,7 @@ from .optax_utils import initialize_optax_optimizer
 
 def construct_spring_update_param_fn(
     energy_and_statistics_fn,
-    optimizer_apply: Callable[[P, P, S, D, Dict[str, Array]], Tuple[P, S]],
+    optimizer_apply: Callable[[P, P, S, D, Dict[str, Array]], Tuple[P, S, Dict]],
     get_position_fn: GetPositionFromData[D],
     update_data_fn: UpdateDataFn[D, P],
     apply_pmap: bool = True,
@@ -41,7 +42,7 @@ def construct_spring_update_param_fn(
 
         energy, local_energies, stats = energy_and_statistics_fn(params, position)
 
-        params, optimizer_state = optimizer_apply(
+        params, optimizer_state, opt_metrics = optimizer_apply(
             energy,
             local_energies,
             params,
@@ -56,6 +57,7 @@ def construct_spring_update_param_fn(
             stats["variance_noclip"],
             metrics,
         )
+        metrics.update(opt_metrics)
         if record_param_l1_norm:
             metrics.update({"param_l1_norm": tree_reduce_l1(params)})
         return params, data, optimizer_state, metrics, key
@@ -105,6 +107,11 @@ def initialize_spring(
             grad, optimizer_state, params
         )
 
+        opt_metrics = get_update_norm_diagnostics(
+            updates,
+            optimizer_config.constrain_norm,
+            optimizer_config.norm_constraint,
+        )
         if optimizer_config.constrain_norm:
             updates = constrain_norm(
                 updates,
@@ -112,7 +119,7 @@ def initialize_spring(
             )
 
         params = optax.apply_updates(params, updates)
-        return params, optimizer_state
+        return params, optimizer_state, opt_metrics
 
     update_param_fn = construct_spring_update_param_fn(
         energy_and_statistics_fn,

@@ -189,6 +189,22 @@ def test_identical_T_drives_beta_tilde_to_upper_bound():
     np.testing.assert_allclose(float(state2.mu), 1.0, atol=1e-5)
 
 
+def test_mu_cap_bounds_adaptive_mu():
+    """With mu_cap set, the saturating-mu scenario above is capped at mu_cap."""
+    nchains = 9
+    params, positions = _setup(nchains=nchains)
+    centered = jax.random.normal(jax.random.PRNGKey(8), (nchains,))
+    step_fn = get_prime_sr_step(
+        _log_psi_apply, lambda t: 0.05, damping=1e-2, mu_cap=0.7
+    )
+
+    _, state1 = step_fn(centered, params, positions, _fresh_state(params, nchains))
+    _, state2 = step_fn(centered, params, positions, state1)
+
+    # identical T would drive mu to 1.0 (see test above); the cap holds it at 0.7
+    np.testing.assert_allclose(float(state2.mu), 0.7, atol=1e-6)
+
+
 def test_second_step_matches_base_spring_with_frozen_mu():
     """A perturbed-positions second step equals base SPRING run at mu = mu_2."""
     nchains = 9
@@ -278,6 +294,8 @@ def test_initialize_single_device_and_apply_advances_state():
         record_param_l1_norm=False,
         apply_pmap=False,  # single device: jitted, not pmapped
     )
+    # NB: mu_cap deliberately omitted from the config above — the initializer
+    # must fall back to the no-op default 1.0 for configs predating the knob.
 
     assert int(opt_state.step) == 0
     assert int(opt_state.alpha_prev_ceil) == 0  # sentinel: no cached subspace
@@ -288,12 +306,61 @@ def test_initialize_single_device_and_apply_advances_state():
     )
     assert int(new_state.step) == 1
     assert int(new_state.alpha_prev_ceil) >= 1
-    for k in ["energy", "variance", "mu", "alpha", "rank", "beta_tilde"]:
+    for k in [
+        "energy",
+        "variance",
+        "mu",
+        "alpha",
+        "rank",
+        "beta_tilde",
+        "update_sq_norm_preclip",
+        "norm_cap_applied",
+    ]:
         assert k in metrics, f"missing metric {k}"
     np.testing.assert_allclose(float(metrics["mu"]), 0.0)  # first step
     assert float(metrics["rank"]) >= 1.0
+    assert float(metrics["update_sq_norm_preclip"]) > 0.0
+    # the cap flag must be consistent with the pre-clip norm and the cap value
+    assert float(metrics["norm_cap_applied"]) == float(
+        float(metrics["update_sq_norm_preclip"]) > 1e-3
+    )
     for leaf in jax.tree_util.tree_leaves(new_params):
         assert bool(jnp.all(jnp.isfinite(leaf)))
+
+
+def test_initialize_respects_config_mu_cap():
+    """optimizer_config.mu_cap flows through initialize_prime_sr to the step."""
+    nchains = 8
+    params, positions = _setup(nchains=nchains)
+    data = positions
+
+    update_param_fn, opt_state = initialize_prime_sr(
+        _log_psi_apply,
+        _energy_and_statistics_fn,
+        params,
+        data,
+        get_position_fn=lambda d: d,
+        update_data_fn=lambda d, p_: d,
+        learning_rate_schedule=lambda t: 0.05,
+        optimizer_config=ConfigDict(
+            {
+                "learning_rate": 0.05,
+                "damping": 1e-3,
+                "constrain_norm": True,
+                "norm_constraint": 1e-3,
+                "mu_cap": 0.3,
+            }
+        ),
+        record_param_l1_norm=False,
+        apply_pmap=False,
+    )
+
+    key = jax.random.PRNGKey(0)
+    state = opt_state
+    p, d = params, data
+    for _ in range(3):
+        p, d, state, metrics, key = update_param_fn(p, d, state, key)
+        assert float(metrics["mu"]) <= 0.3 + 1e-6
 
 
 def test_default_config_has_prime_sr_block():
@@ -309,12 +376,14 @@ def test_default_config_has_prime_sr_block():
         "damping",
         "constrain_norm",
         "norm_constraint",
+        "mu_cap",
     ]:
         assert k in block, f"missing config key {k}"
     assert "mu" not in block  # tuning-free: momentum is adaptive
     assert block["learning_rate"] == 2e-2
     assert block["damping"] == 1e-3
     assert block["norm_constraint"] == 1e-3
+    assert block["mu_cap"] == 1.0  # no-op default; ablation knob only
 
 
 def test_parse_optimizer_config_dispatches_prime_sr():

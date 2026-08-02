@@ -29,6 +29,7 @@ from ml_collections import ConfigDict
 import vmcnet.utils as utils
 from vmcnet.updates.update_param_fns import (
     UpdateParamFn,
+    get_update_norm_diagnostics,
     make_traced_fn_with_single_metrics,
     update_metrics_with_noclip,
 )
@@ -151,6 +152,7 @@ def get_prime_sr_step(
     log_psi_apply: ModelApply[P],
     learning_rate_schedule: LearningRateSchedule,
     damping: chex.Scalar = 0.001,
+    mu_cap: chex.Scalar = 1.0,
 ) -> Callable[[Array, P, Array, PRIMESRState], Tuple[P, PRIMESRState]]:
     """Get the PRIME-SR step kernel.
 
@@ -163,6 +165,9 @@ def get_prime_sr_step(
         log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
         learning_rate_schedule: step -> learning rate.
         damping: additive damping lambda in (T + lambda I).
+        mu_cap: upper bound applied to the adaptive momentum mu_k. The default
+            1.0 is a no-op (paper behavior); setting e.g. 0.95 is an ablation
+            knob to test whether PRIME-SR failures come from mu_k overshooting.
 
     Returns:
         The step kernel described above.
@@ -198,6 +203,7 @@ def get_prime_sr_step(
         mu, beta_tilde = _adaptive_mu(
             alpha, rank, alpha_ceil, V_alpha, state.V_prev_alpha, state.alpha_prev_ceil
         )
+        mu = jnp.minimum(mu, mu_cap)
 
         # SPRING update with adaptive mu (same math as spring.py:140-181)
         mu_phi = multiply_tree_by_scalar(state.phi, mu)
@@ -287,7 +293,7 @@ def construct_prime_sr_update_param_fn(
     def update_param_fn(params, data, optimizer_state, key):
         position = get_position_fn(data)
         energy, local_energies, stats = energy_and_statistics_fn(params, position)
-        params, optimizer_state = optimizer_apply(
+        params, optimizer_state, opt_metrics = optimizer_apply(
             energy, local_energies, params, optimizer_state, data
         )
         data = update_data_fn(data, params)
@@ -304,6 +310,7 @@ def construct_prime_sr_update_param_fn(
                 "beta_tilde": optimizer_state.beta_tilde,
             }
         )
+        metrics.update(opt_metrics)
         if record_param_l1_norm:
             metrics.update({"param_l1_norm": tree_reduce_l1(params)})
         return params, data, optimizer_state, metrics, key
@@ -337,8 +344,9 @@ def initialize_prime_sr(
         update_data_fn: function which updates data for new params.
         learning_rate_schedule: step -> learning rate.
         optimizer_config: ConfigDict with keys damping, constrain_norm, and
-            norm_constraint. There is intentionally no mu key: the momentum is
-            adaptive (paper Eq. 4.5).
+            norm_constraint, plus optional mu_cap (default 1.0 = no cap; an
+            ablation knob only). There is intentionally no mu key: the
+            momentum is adaptive (paper Eq. 4.5).
         record_param_l1_norm: whether to record the params L1 norm in metrics.
         apply_pmap: whether to pmap (True) or jit (False) the returned update
             fn and the initial state construction.
@@ -347,7 +355,10 @@ def initialize_prime_sr(
         Tuple (update_param_fn, optimizer_state).
     """
     step_fn = get_prime_sr_step(
-        log_psi_apply, learning_rate_schedule, optimizer_config.damping
+        log_psi_apply,
+        learning_rate_schedule,
+        optimizer_config.damping,
+        mu_cap=float(optimizer_config.get("mu_cap", 1.0)),
     )
 
     def init_state(local_params: P, local_positions: Array) -> PRIMESRState:
@@ -372,10 +383,15 @@ def initialize_prime_sr(
         updates, optimizer_state = step_fn(
             centered_local_energies, params, positions, optimizer_state
         )
+        opt_metrics = get_update_norm_diagnostics(
+            updates,
+            optimizer_config.constrain_norm,
+            optimizer_config.norm_constraint,
+        )
         if optimizer_config.constrain_norm:
             updates = constrain_norm(updates, optimizer_config.norm_constraint)
         params = optax.apply_updates(params, updates)
-        return params, optimizer_state
+        return params, optimizer_state, opt_metrics
 
     update_param_fn = construct_prime_sr_update_param_fn(
         energy_and_statistics_fn,

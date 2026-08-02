@@ -1,0 +1,31 @@
+{
+    "notes": "N2 stretched, bond length 4.0 Bohr (SPRING paper arXiv:2401.10190; absent from the PRIME-SR paper). Tuned molecular SPRING eta is 0.002 -- set it explicitly per run; the optimizer defaults are NOT molecular-tuned. eval nburn is 10000 for N2 (SPRING paper Table B.4).",
+    "subfolder_name": "N2_4.0",
+    "problem": {
+        "ion_pos": [
+            [ 0.0, 0.0, -2.0 ],
+            [ 0.0, 0.0, 2.0 ]
+        ],
+        "ion_charges": [
+            7.0,
+            7.0
+        ],
+        "nelec": [
+            7, 7
+        ]
+    },
+    "vmc": {
+        "nchains": 1000,
+        "nepochs": 100000,
+        "nburn": 5000,
+        "nsteps_per_param_update": 10,
+        "clip_threshold": 5.0,
+        "clip_center": "mean"
+    },
+    "eval": {
+        "nchains": 2000,
+        "nburn": 10000,
+        "nepochs": 20000,
+        "nsteps_per_param_update": 10
+    }
+}

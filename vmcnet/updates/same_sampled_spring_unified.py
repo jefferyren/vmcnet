@@ -21,6 +21,7 @@ from ml_collections import ConfigDict
 import vmcnet.utils as utils
 from vmcnet.updates.update_param_fns import (
     UpdateParamFn,
+    get_update_norm_diagnostics,
     make_traced_fn_with_single_metrics,
     update_metrics_with_noclip,
 )
@@ -58,6 +59,10 @@ class SameSampledSPRINGUnifiedState(NamedTuple):
         beta: current decay factor / momentum (scalar).
         checkpoint_idx: adaptive-beta checkpoint counter (int scalar, starts at 1).
         step: step/epoch counter (int scalar, starts at 0).
+        r_ip: raw (pre-clip) windowed residual-contraction ratio from the most
+            recent step (scalar, diagnostic only). Values > 1 mean the probe
+            residual is growing — the regime where min(1, r_ip) clipping can
+            pin r_hat at 1 and drive beta toward 1.
     """
 
     phi: PyTree
@@ -69,6 +74,7 @@ class SameSampledSPRINGUnifiedState(NamedTuple):
     beta: Array
     checkpoint_idx: Array
     step: Array
+    r_ip: Array
 
 
 def _draw_unit_norm_like(key: PRNGKey, params: P) -> P:
@@ -140,7 +146,7 @@ def _adaptive_beta_update(
     checkpoint_idx: Array,
     step: Array,
     p: int,
-) -> Tuple[Array, Array, Array, Array]:
+) -> Tuple[Array, Array, Array, Array, Array]:
     """Slide the probe residual into the buffer and update beta on schedule.
 
     The residual buffer is chronological (oldest first), length 2p. Every p steps once
@@ -159,7 +165,13 @@ def _adaptive_beta_update(
         p: lookback window length.
 
     Returns:
-        Tuple (new_buffer, new_r_hat, new_beta, new_checkpoint_idx).
+        Tuple (new_buffer, new_r_hat, new_beta, new_checkpoint_idx, r_ip), where
+        r_ip is the RAW (pre-min-clip) window ratio computed this step. It is
+        returned every step as a diagnostic (only trigger steps feed it into
+        r_hat); values > 1 flag a growing probe residual. While step < 2p the
+        buffer is partially zero and the ratio is meaningless (up to res^2/1e-30),
+        so the returned diagnostic is gated to 1.0 there; the internal r_hat
+        update is unaffected (it is already gated to trigger steps >= 2p).
     """
     new_buffer = jnp.concatenate([residual_buffer[1:], probe_res_norm[None]])
 
@@ -180,7 +192,8 @@ def _adaptive_beta_update(
     new_beta = jnp.where(do_update, beta_new, beta)
     new_r_hat = jnp.where(do_update, r_hat_new, r_hat)
     new_checkpoint_idx = jnp.where(do_update, checkpoint_idx + 1, checkpoint_idx)
-    return new_buffer, new_r_hat, new_beta, new_checkpoint_idx
+    r_ip_diag = jnp.where(step >= 2 * p, r_ip, jnp.ones_like(r_ip))
+    return new_buffer, new_r_hat, new_beta, new_checkpoint_idx, r_ip_diag
 
 
 def _adaptive_eta_main(
@@ -322,7 +335,7 @@ def get_same_sampled_spring_unified_step(
         probe_res_norm = jnp.linalg.norm(apply_A(resid_in))
 
         # ---- adaptive-beta ----
-        new_buffer, new_r_hat, new_beta, new_ckpt = _adaptive_beta_update(
+        new_buffer, new_r_hat, new_beta, new_ckpt, r_ip = _adaptive_beta_update(
             state.residual_buffer,
             probe_res_norm,
             state.r_hat,
@@ -342,6 +355,7 @@ def get_same_sampled_spring_unified_step(
             beta=new_beta,
             checkpoint_idx=new_ckpt,
             step=state.step + 1,
+            r_ip=r_ip,
         )
         return updates, new_state
 
@@ -393,15 +407,17 @@ def construct_same_sampled_spring_unified_update_param_fn(
             (params, data, optimizer_state, key)
             -> (new_params, new_data, new_optimizer_state, metrics, key)
         The metrics include the adaptive momentum beta (logged as "mu", matching
-        PRIME-SR's key) and the convergence-rate estimate r_hat, both read from
-        the new optimizer state. The function is pmapped if apply_pmap is True,
-        and jitted if apply_pmap is False.
+        PRIME-SR's key), the convergence-rate estimate r_hat, the probe residual
+        norm probe_res_norm, and the raw window ratio probe_r_ip, all read from
+        the new optimizer state, plus the update-norm diagnostics
+        update_sq_norm_preclip and norm_cap_applied. The function is pmapped if
+        apply_pmap is True, and jitted if apply_pmap is False.
     """
 
     def update_param_fn(params, data, optimizer_state, key):
         position = get_position_fn(data)
         energy, local_energies, stats = energy_and_statistics_fn(params, position)
-        params, optimizer_state = optimizer_apply(
+        params, optimizer_state, opt_metrics = optimizer_apply(
             energy, local_energies, params, optimizer_state, data
         )
         data = update_data_fn(data, params)
@@ -411,7 +427,18 @@ def construct_same_sampled_spring_unified_update_param_fn(
             stats["energy_noclip"], stats["variance_noclip"], metrics
         )
         # The adaptive momentum beta is logged as "mu" to match PRIME-SR's key.
-        metrics.update({"mu": optimizer_state.beta, "r_hat": optimizer_state.r_hat})
+        # probe_res_norm is the current step's probe residual (last buffer slot);
+        # probe_r_ip is the raw pre-clip window ratio (> 1 == growing residual,
+        # the precursor of the beta-locks-toward-1 failure mode).
+        metrics.update(
+            {
+                "mu": optimizer_state.beta,
+                "r_hat": optimizer_state.r_hat,
+                "probe_res_norm": optimizer_state.residual_buffer[-1],
+                "probe_r_ip": optimizer_state.r_ip,
+            }
+        )
+        metrics.update(opt_metrics)
         if record_param_l1_norm:
             metrics.update({"param_l1_norm": tree_reduce_l1(params)})
         return params, data, optimizer_state, metrics, key
@@ -493,6 +520,7 @@ def initialize_same_sampled_spring_unified(
             beta=jnp.array(mu),
             checkpoint_idx=jnp.array(1, jnp.int32),
             step=jnp.array(0, jnp.int32),
+            r_ip=jnp.array(1.0),
         )
 
     def optimizer_apply(energy, local_energies, params, optimizer_state, data):
@@ -501,10 +529,15 @@ def initialize_same_sampled_spring_unified(
         updates, optimizer_state = step_fn(
             centered_local_energies, params, positions, optimizer_state
         )
+        opt_metrics = get_update_norm_diagnostics(
+            updates,
+            optimizer_config.constrain_norm,
+            optimizer_config.norm_constraint,
+        )
         if optimizer_config.constrain_norm:
             updates = constrain_norm(updates, optimizer_config.norm_constraint)
         params = optax.apply_updates(params, updates)
-        return params, optimizer_state
+        return params, optimizer_state, opt_metrics
 
     update_param_fn = construct_same_sampled_spring_unified_update_param_fn(
         energy_and_statistics_fn,

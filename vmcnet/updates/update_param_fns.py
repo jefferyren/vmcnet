@@ -2,11 +2,14 @@
 
 from typing import Callable, Dict, Iterable, Optional, Tuple
 
+import chex
 import jax
+import jax.numpy as jnp
 
 import vmcnet.physics as physics
 import vmcnet.utils as utils
 from vmcnet.utils.pytree_helpers import (
+    tree_inner_product,
     tree_reduce_l1,
 )
 from vmcnet.utils.typing import (
@@ -61,6 +64,34 @@ def update_metrics_with_noclip(
     if variance_noclip is not None:
         metrics.update({"variance_noclip": variance_noclip})
     return metrics
+
+
+def get_update_norm_diagnostics(
+    updates: P, constrain_norm: bool, norm_constraint: chex.Numeric
+) -> Dict[str, Array]:
+    """Diagnostics of the (eta-scaled) update norm BEFORE the norm constraint.
+
+    While the norm cap binds, the realized step of the SR-family optimizers is
+    independent of the learning rate (the direction never contains eta), so
+    these two metrics are needed to interpret any learning-rate sweep.
+
+    Args:
+        updates: the eta-scaled parameter update, before any norm constraint.
+        constrain_norm: whether the optimizer applies the norm constraint.
+        norm_constraint: the squared-L2 cap the constraint enforces.
+
+    Returns:
+        Dict with "update_sq_norm_preclip" (squared L2 norm of `updates`,
+        pmean-synced like the constraint itself) and "norm_cap_applied"
+        (1.0 when the constraint will rescale this step, else 0.0; always 0.0
+        when constrain_norm is False).
+    """
+    sq_norm = utils.distribute.pmean_if_pmap(tree_inner_product(updates, updates))
+    if constrain_norm:
+        cap_applied = jnp.where(sq_norm > norm_constraint, 1.0, 0.0)
+    else:
+        cap_applied = jnp.zeros(())
+    return {"update_sq_norm_preclip": sq_norm, "norm_cap_applied": cap_applied}
 
 
 def construct_default_update_param_fn(

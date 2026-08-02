@@ -60,6 +60,7 @@ def test_state_namedtuple_fields():
         "beta",
         "checkpoint_idx",
         "step",
+        "r_ip",
     )
 
 
@@ -148,7 +149,7 @@ def test_adaptive_beta_slides_buffer_but_no_update_before_2p():
     """Test that the buffer slides but beta/r_hat/checkpoint stay put before 2p."""
     p = 3
     buffer = jnp.arange(2 * p, dtype=jnp.float32)  # [0,1,2,3,4,5]
-    out_buf, out_rhat, out_beta, out_ckpt = _adaptive_beta_update(
+    out_buf, out_rhat, out_beta, out_ckpt, out_rip = _adaptive_beta_update(
         buffer,
         jnp.array(9.0),
         jnp.array(1.0),
@@ -168,7 +169,7 @@ def test_adaptive_beta_all_zero_buffer_no_nan():
     """All-zero buffer at a non-trigger step yields no NaN and no state change."""
     p = 3
     buffer = jnp.zeros(2 * p)
-    out_buf, out_rhat, out_beta, out_ckpt = _adaptive_beta_update(
+    out_buf, out_rhat, out_beta, out_ckpt, out_rip = _adaptive_beta_update(
         buffer,
         jnp.array(0.0),
         jnp.array(1.0),
@@ -205,6 +206,10 @@ def test_adaptive_beta_updates_at_trigger_matches_numpy():
     np.testing.assert_allclose(got[1], exp[1], rtol=1e-5)
     np.testing.assert_allclose(got[2], exp[2], rtol=1e-5)
     assert int(got[3]) == exp[3]
+    # the raw (pre-clip) window ratio is returned as the 5th element
+    buf = np.concatenate([np.asarray(buffer)[1:], [res]])
+    r_ip_expected = np.sum(buf[p : 2 * p] ** 2) / np.sum(buf[0:p] ** 2)
+    np.testing.assert_allclose(got[4], r_ip_expected, rtol=1e-5)
 
 
 def test_adaptive_beta_is_jittable():
@@ -282,6 +287,7 @@ def _make_state(params, p, beta, phi=None):
         beta=jnp.array(float(beta)),
         checkpoint_idx=jnp.array(1, jnp.int32),
         step=jnp.array(0, jnp.int32),
+        r_ip=jnp.array(1.0),
     )
 
 
@@ -440,6 +446,17 @@ def test_initialize_single_device_and_apply_reduces_state_step():
     # Adaptive momentum beta is logged as "mu" (PRIME-SR's key) plus r_hat.
     assert np.isclose(float(metrics["mu"]), float(new_state.beta))
     assert np.isclose(float(metrics["r_hat"]), float(new_state.r_hat))
+    # Probe diagnostics: residual norm (last buffer slot) and raw window ratio.
+    assert np.isclose(
+        float(metrics["probe_res_norm"]), float(new_state.residual_buffer[-1])
+    )
+    assert np.isclose(float(metrics["probe_r_ip"]), float(new_state.r_ip))
+    # Update-norm diagnostics: positive pre-clip squared norm, and a cap flag
+    # consistent with the norm and the configured cap (norm_constraint=1e-3).
+    assert float(metrics["update_sq_norm_preclip"]) > 0.0
+    assert float(metrics["norm_cap_applied"]) == float(
+        float(metrics["update_sq_norm_preclip"]) > 1e-3
+    )
     for leaf in jax.tree_util.tree_leaves(new_params):
         assert bool(jnp.all(jnp.isfinite(leaf)))
 

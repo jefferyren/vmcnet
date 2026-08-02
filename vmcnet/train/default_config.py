@@ -324,6 +324,10 @@ def get_default_vmc_config() -> Dict:
                 "damping": 1e-3,
                 "constrain_norm": True,
                 "norm_constraint": 1e-3,
+                # Upper bound on the adaptive mu_k. 1.0 is a no-op (paper
+                # behavior); lower values are an ABLATION knob only, to test
+                # whether PRIME-SR failures come from mu_k overshooting.
+                "mu_cap": 1.0,
             },
         },
     }
