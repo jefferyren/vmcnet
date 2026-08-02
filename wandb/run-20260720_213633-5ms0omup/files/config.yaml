@@ -1,0 +1,239 @@
+_wandb:
+    value:
+        cli_version: 0.28.1
+        e:
+            6rqysvmhchcngxlmcbkb27ko56b0c5ie:
+                args:
+                    - /global/scratch/users/ren27/vmcnet_logs
+                    - --runs
+                    - carbon_prelim
+                    - carbon_spring
+                    - carbon_prime_sr
+                    - carbon_same_sampled_spring_unified
+                codePath: slurm/backfill_wandb.py
+                codePathLocal: slurm/backfill_wandb.py
+                cpu_count: 56
+                cpu_count_logical: 56
+                disk:
+                    /:
+                        total: "134942158848"
+                        used: "10748772352"
+                email: ren27@berkeley.edu
+                executable: /global/scratch/users/ren27/envs/vmcnet/bin/python
+                git:
+                    commit: 059163bab518da82789f6febfbc163a88e266887
+                    remote: https://github.com/jefferyren/vmcnet.git
+                host: ln003.brc
+                memory:
+                    total: "269884321792"
+                os: Linux-4.18.0-553.126.1.el8_10.x86_64-x86_64-with-glibc2.28
+                program: /global/scratch/users/ren27/vmcnet/slurm/backfill_wandb.py
+                python: CPython 3.12.13
+                root: /global/scratch/users/ren27/vmcnet
+                startedAt: "2026-07-21T04:36:33.656780Z"
+                writerId: 6rqysvmhchcngxlmcbkb27ko56b0c5ie
+        m: []
+        python_version: 3.12.13
+        t:
+            "3":
+                - 2
+                - 13
+                - 16
+                - 41
+                - 61
+            "4": 3.12.13
+            "5": 0.28.1
+            "10":
+                - 20
+            "12": 0.28.1
+            "13": linux-x86_64
+base_logdir:
+    value: /global/scratch/users/ren27/vmcnet_logs
+debug_nans:
+    value: false
+distribute:
+    value: false
+dtype:
+    value: float32
+eval:
+    value:
+        nan_safe: false
+        nburn: 5000
+        nchains: 2000
+        nepochs: 20000
+        nmoves_per_width_update: 100
+        nsteps_per_param_update: 10
+        record_amplitudes: false
+        record_local_energies: true
+        std_move: 0.25
+        use_data_from_training: false
+initial_seed:
+    value: 0
+logdir:
+    value: /global/scratch/users/ren27/vmcnet_logs/carbon_prime_sr
+logging_level:
+    value: INFO
+model:
+    value:
+        backflow:
+            activation_fn: tanh
+            bias_init_1e_stream:
+                type: normal
+            bias_init_2e_stream:
+                type: normal
+            kernel_init_2e_1e_stream:
+                scale: 1
+                type: orthogonal
+            kernel_init_2e_2e_stream:
+                scale: 2
+                type: orthogonal
+            kernel_init_mixed:
+                scale: 1
+                type: orthogonal
+            kernel_init_unmixed:
+                scale: 2
+                type: orthogonal
+            ndense_list:
+                - - 256
+                  - 16
+                - - 256
+                  - 16
+                - - 256
+                  - 16
+                - - 256
+            one_electron_skip: true
+            one_electron_skip_scale: 1
+            two_electron_skip: true
+            two_electron_skip_scale: 1
+            use_bias: true
+        bias_init_orbital_linear:
+            type: normal
+        envelope_softening: 0
+        full_det: true
+        include_cusp_jastrow: false
+        input_streams:
+            ee_norm_softening: 0
+            ei_norm_softening: 0
+            include_2e_stream: true
+            include_ee_norm: true
+            include_ei_norm: true
+        isotropic_decay: true
+        kernel_init_envelope_dim:
+            type: ones
+        kernel_init_envelope_ion:
+            type: ones
+        kernel_init_orbital_linear:
+            scale: 2
+            type: orthogonal
+        ndeterminants: 16
+        orbitals_use_bias: true
+        type: ferminet
+notes:
+    value: Carbon atom, tuned settings from SPRING paper (arXiv:2401.10190) (reloaded from /global/scratch/users/ren27/vmcnet_logs/carbon_prelim/checkpoints/1000.npz, new optimizer state)
+problem:
+    value:
+        ee_softening: 0
+        ei_softening: 0
+        ion_charges:
+            - 6
+        ion_pos:
+            - - 0
+              - 0
+              - 0
+        nelec:
+            - 4
+            - 2
+save_to_current_datetime_subfolder:
+    value: false
+subfolder_name:
+    value: carbon_prime_sr
+vmc:
+    value:
+        best_checkpoint_every: 100
+        check_for_nans: false
+        checkpoint_dir: checkpoints
+        checkpoint_every: 5000
+        checkpoint_variance_scale: 10
+        clip_center: mean
+        clip_threshold: 5
+        nan_safe: true
+        nburn: 5000
+        nchains: 1000
+        nepochs: 100000
+        nhistory_max: 200
+        nmoves_per_width_update: 100
+        nsteps_per_param_update: 10
+        optimizer:
+            adam:
+                b1: 0.9
+                b2: 0.999
+                eps: 1e-08
+                eps_root: 0
+                learning_decay_rate: 0.0001
+                learning_rate: 0.05
+                schedule_type: inverse_time
+            gauss_newton:
+                E: 0
+                clip_threshold: 1000
+                constrain_norm: true
+                damping: 0.001
+                learning_decay_rate: 0.0001
+                learning_rate: 1
+                norm_constraint: 0.001
+                schedule_type: inverse_time
+            kfac:
+                curvature_ema: 0.95
+                damping: 0.001
+                estimation_mode: fisher_exact
+                inverse_update_period: 1
+                l2_reg: 0
+                learning_decay_rate: 0.0001
+                learning_rate: 0.05
+                min_damping: 0.0001
+                norm_constraint: 0.001
+                register_only_generic: false
+                schedule_type: inverse_time
+            prime_sr:
+                constrain_norm: true
+                damping: 0.001
+                learning_decay_rate: 0.0001
+                learning_rate: 0.02
+                norm_constraint: 0.001
+                schedule_type: inverse_time
+            same_sampled_spring_unified:
+                adaptive_eta: false
+                adaptive_probe: false
+                constrain_norm: true
+                damping: 0.001
+                lb_window: 30
+                learning_decay_rate: 0.0001
+                learning_rate: 0.05
+                mu: 0
+                norm_constraint: 0.001
+                probe_damping: 0.001
+                probe_lr: -1
+                schedule_type: inverse_time
+            sgd:
+                learning_decay_rate: 0.0001
+                learning_rate: 0.05
+                momentum: 0
+                nesterov: false
+                schedule_type: inverse_time
+            spring:
+                constrain_norm: true
+                damping: 0.001
+                learning_decay_rate: 0.0001
+                learning_rate: 0.05
+                mu: 0.99
+                norm_constraint: 0.001
+                schedule_type: inverse_time
+        optimizer_type: prime_sr
+        record_amplitudes: false
+        record_param_l1_norm: false
+        std_move: 0.25
+wandb:
+    value:
+        group: default
+        mode: disabled
+        name: vmc-molecule_run
+        project: default

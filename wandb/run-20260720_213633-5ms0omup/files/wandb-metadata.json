@@ -1,0 +1,36 @@
+{
+  "os":  "Linux-4.18.0-553.126.1.el8_10.x86_64-x86_64-with-glibc2.28",
+  "python":  "CPython 3.12.13",
+  "startedAt":  "2026-07-21T04:36:33.656780Z",
+  "args":  [
+    "/global/scratch/users/ren27/vmcnet_logs",
+    "--runs",
+    "carbon_prelim",
+    "carbon_spring",
+    "carbon_prime_sr",
+    "carbon_same_sampled_spring_unified"
+  ],
+  "program":  "/global/scratch/users/ren27/vmcnet/slurm/backfill_wandb.py",
+  "codePath":  "slurm/backfill_wandb.py",
+  "codePathLocal":  "slurm/backfill_wandb.py",
+  "git":  {
+    "remote":  "https://github.com/jefferyren/vmcnet.git",
+    "commit":  "059163bab518da82789f6febfbc163a88e266887"
+  },
+  "email":  "ren27@berkeley.edu",
+  "root":  "/global/scratch/users/ren27/vmcnet",
+  "host":  "ln003.brc",
+  "executable":  "/global/scratch/users/ren27/envs/vmcnet/bin/python",
+  "cpu_count":  56,
+  "cpu_count_logical":  56,
+  "disk":  {
+    "/":  {
+      "total":  "134942158848",
+      "used":  "10748772352"
+    }
+  },
+  "memory":  {
+    "total":  "269884321792"
+  },
+  "writerId":  "6rqysvmhchcngxlmcbkb27ko56b0c5ie"
+}

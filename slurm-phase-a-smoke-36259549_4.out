@@ -1,0 +1,417 @@
+jax devices: [CudaDevice(id=0)]
+SMOKE START 2026-08-02T13:19:19-07:00
+wandb: WARNING Unable to verify login in offline mode.
+INFO:root:Reload configuration: 
+append: true
+checkpoint_relative_file_path: best_checkpoint.npz
+config_relative_file_path: config.json
+logdir: NONE
+new_optimizer_state: false
+reburn: false
+same_logdir: false
+use_checkpoint_file: true
+use_config_file: true
+
+INFO:root:Running with configuration: 
+base_logdir: /global/scratch/users/ren27/vmcnet_logs/phase_a/smoke
+debug_nans: false
+distribute: false
+dtype: float32
+eval:
+  nan_safe: false
+  nburn: 0
+  nchains: 2000
+  nepochs: 0
+  nmoves_per_width_update: 100
+  nsteps_per_param_update: 10
+  record_amplitudes: false
+  record_local_energies: true
+  std_move: 0.25
+  use_data_from_training: false
+initial_seed: 0
+logdir: /global/scratch/users/ren27/vmcnet_logs/phase_a/smoke/smoke_H4_spring_n1000
+logging_level: INFO
+model:
+  backflow:
+    activation_fn: tanh
+    bias_init_1e_stream:
+      type: normal
+    bias_init_2e_stream:
+      type: normal
+    kernel_init_2e_1e_stream:
+      scale: 1.0
+      type: orthogonal
+    kernel_init_2e_2e_stream:
+      scale: 2.0
+      type: orthogonal
+    kernel_init_mixed:
+      scale: 1.0
+      type: orthogonal
+    kernel_init_unmixed:
+      scale: 2.0
+      type: orthogonal
+    ndense_list: !!python/tuple
+    - &id001 !!python/tuple
+      - 256
+      - 16
+    - *id001
+    - *id001
+    - !!python/tuple
+      - 256
+    one_electron_skip: true
+    one_electron_skip_scale: 1.0
+    two_electron_skip: true
+    two_electron_skip_scale: 1.0
+    use_bias: true
+  bias_init_orbital_linear:
+    type: normal
+  envelope_softening: 0.0
+  full_det: true
+  include_cusp_jastrow: false
+  input_streams:
+    ee_norm_softening: 0.0
+    ei_norm_softening: 0.0
+    include_2e_stream: true
+    include_ee_norm: true
+    include_ei_norm: true
+  isotropic_decay: true
+  kernel_init_envelope_dim:
+    type: ones
+  kernel_init_envelope_ion:
+    type: ones
+  kernel_init_orbital_linear:
+    scale: 2.0
+    type: orthogonal
+  ndeterminants: 16
+  orbitals_use_bias: true
+  type: ferminet
+notes: H4 square, 4 Bohr side. vmc/eval blocks are explicit so nothing rides on defaults
+  (the bare-geometry version inherited nepochs=200000 and eval.nchains=1000). Settings
+  mirror carbon.json / the SPRING-paper protocol.
+problem:
+  ee_softening: 0.0
+  ei_softening: 0.0
+  ion_charges: !!python/tuple
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  ion_pos: !!python/tuple
+  - !!python/tuple
+    - 0.0
+    - 0.0
+    - 0.0
+  - !!python/tuple
+    - 4.0
+    - 0.0
+    - 0.0
+  - !!python/tuple
+    - 0.0
+    - 4.0
+    - 0.0
+  - !!python/tuple
+    - 4.0
+    - 4.0
+    - 0.0
+  nelec: !!python/tuple
+  - 2
+  - 2
+save_to_current_datetime_subfolder: false
+subfolder_name: smoke_H4_spring_n1000
+vmc:
+  best_checkpoint_every: 100
+  check_for_nans: false
+  checkpoint_dir: checkpoints
+  checkpoint_every: 200
+  checkpoint_variance_scale: 10
+  clip_center: mean
+  clip_threshold: 5.0
+  nan_safe: true
+  nburn: 1000
+  nchains: 1000
+  nepochs: 200
+  nhistory_max: 200
+  nmoves_per_width_update: 100
+  nsteps_per_param_update: 10
+  optimizer:
+    adam:
+      b1: 0.9
+      b2: 0.999
+      eps: 1.0e-08
+      eps_root: 0.0
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      schedule_type: inverse_time
+    gauss_newton:
+      E: 0.0
+      clip_threshold: 1000.0
+      constrain_norm: true
+      damping: 0.001
+      learning_decay_rate: 0.0001
+      learning_rate: 1.0
+      norm_constraint: 0.001
+      schedule_type: inverse_time
+    kfac:
+      curvature_ema: 0.95
+      damping: 0.001
+      estimation_mode: fisher_exact
+      inverse_update_period: 1
+      l2_reg: 0.0
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      min_damping: 0.0001
+      norm_constraint: 0.001
+      register_only_generic: false
+      schedule_type: inverse_time
+    prime_sr:
+      constrain_norm: true
+      damping: 0.001
+      learning_decay_rate: 0.0001
+      learning_rate: 0.02
+      mu_cap: 1.0
+      norm_constraint: 0.001
+      schedule_type: inverse_time
+    same_sampled_spring_unified:
+      adaptive_eta: false
+      adaptive_probe: false
+      constrain_norm: true
+      damping: 0.001
+      lb_window: 30
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      mu: 0.0
+      norm_constraint: 0.001
+      probe_damping: 0.001
+      probe_lr: -1.0
+      schedule_type: inverse_time
+    sgd:
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      momentum: 0.0
+      nesterov: false
+      schedule_type: inverse_time
+    spring:
+      constrain_norm: true
+      damping: 0.001
+      learning_decay_rate: 0.0001
+      learning_rate: 0.02
+      mu: 0.99
+      norm_constraint: 0.001
+      schedule_type: inverse_time
+  optimizer_type: spring
+  record_amplitudes: false
+  record_param_l1_norm: false
+  std_move: 0.25
+wandb:
+  group: default
+  mode: disabled
+  name: vmc-molecule_run
+  project: default
+
+INFO:jax._src.xla_bridge:Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:jax._src.xla_bridge:Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+INFO:root:Saving to /global/scratch/users/ren27/vmcnet_logs/phase_a/smoke/smoke_H4_spring_n1000
+INFO:root:Burning data for 1000 steps
+INFO:root:Epoch     1, Energy: -9.56851e-01 (-9.45866e-01), Variance: 1.39046e+00 (1.72083e+00), Accept ratio: 0.52720, 
+INFO:root:Epoch     2, Energy: -1.00312e+00 (-1.00824e+00), Variance: 1.45013e+00 (1.63541e+00), Accept ratio: 0.52756, 
+INFO:root:Epoch     3, Energy: -9.62742e-01 (-9.49763e-01), Variance: 1.22122e+00 (1.46371e+00), Accept ratio: 0.52956, 
+INFO:root:Epoch     4, Energy: -9.50938e-01 (-9.44066e-01), Variance: 1.40313e+00 (1.51504e+00), Accept ratio: 0.53146, 
+INFO:root:Epoch     5, Energy: -1.02016e+00 (-1.01660e+00), Variance: 1.27617e+00 (1.43069e+00), Accept ratio: 0.53510, 
+INFO:root:Epoch     6, Energy: -1.00255e+00 (-1.00239e+00), Variance: 1.24051e+00 (1.60720e+00), Accept ratio: 0.53985, 
+INFO:root:Epoch     7, Energy: -9.69149e-01 (-9.43673e-01), Variance: 1.47411e+00 (1.79974e+00), Accept ratio: 0.53250, 
+INFO:root:Epoch     8, Energy: -1.00965e+00 (-1.02617e+00), Variance: 1.36660e+00 (2.13782e+00), Accept ratio: 0.53700, 
+INFO:root:Epoch     9, Energy: -1.04722e+00 (-1.04785e+00), Variance: 1.25208e+00 (1.52302e+00), Accept ratio: 0.52821, 
+INFO:root:Epoch    10, Energy: -1.04339e+00 (-1.02819e+00), Variance: 1.17149e+00 (1.54217e+00), Accept ratio: 0.53331, 
+INFO:root:Epoch    11, Energy: -1.04410e+00 (-1.01823e+00), Variance: 1.11877e+00 (1.51500e+00), Accept ratio: 0.54661, 
+INFO:root:Epoch    12, Energy: -1.13293e+00 (-1.13596e+00), Variance: 1.14846e+00 (1.29591e+00), Accept ratio: 0.53882, 
+INFO:root:Epoch    13, Energy: -1.08075e+00 (-1.06275e+00), Variance: 1.21372e+00 (1.69651e+00), Accept ratio: 0.54056, 
+INFO:root:Epoch    14, Energy: -1.11560e+00 (-1.11929e+00), Variance: 1.11938e+00 (1.67207e+00), Accept ratio: 0.54533, 
+INFO:root:Epoch    15, Energy: -1.18212e+00 (-1.17805e+00), Variance: 1.05105e+00 (1.14255e+00), Accept ratio: 0.53993, 
+INFO:root:Epoch    16, Energy: -1.14997e+00 (-1.14125e+00), Variance: 8.76074e-01 (9.82685e-01), Accept ratio: 0.54311, 
+INFO:root:Epoch    17, Energy: -1.15923e+00 (-1.14683e+00), Variance: 1.11385e+00 (1.43172e+00), Accept ratio: 0.54287, 
+INFO:root:Epoch    18, Energy: -1.22295e+00 (-1.21859e+00), Variance: 1.03656e+00 (1.78427e+00), Accept ratio: 0.53575, 
+INFO:root:Epoch    19, Energy: -1.20980e+00 (-1.20894e+00), Variance: 8.61944e-01 (1.13835e+00), Accept ratio: 0.54178, 
+INFO:root:Epoch    20, Energy: -1.20060e+00 (-1.19758e+00), Variance: 9.68845e-01 (1.17744e+00), Accept ratio: 0.53965, 
+INFO:root:Epoch    21, Energy: -1.27891e+00 (-1.28314e+00), Variance: 9.71893e-01 (1.48408e+00), Accept ratio: 0.54516, 
+INFO:root:Epoch    22, Energy: -1.27916e+00 (-1.27386e+00), Variance: 7.54254e-01 (8.11894e-01), Accept ratio: 0.55808, 
+INFO:root:Epoch    23, Energy: -1.23393e+00 (-1.21956e+00), Variance: 8.28547e-01 (1.07335e+00), Accept ratio: 0.55588, 
+INFO:root:Epoch    24, Energy: -1.24785e+00 (-1.25045e+00), Variance: 9.47262e-01 (1.23557e+00), Accept ratio: 0.54739, 
+INFO:root:Epoch    25, Energy: -1.27590e+00 (-1.27308e+00), Variance: 8.64846e-01 (1.03247e+00), Accept ratio: 0.54990, 
+INFO:root:Epoch    26, Energy: -1.27701e+00 (-1.28354e+00), Variance: 8.39295e-01 (1.51864e+00), Accept ratio: 0.55100, 
+INFO:root:Epoch    27, Energy: -1.28567e+00 (-1.27432e+00), Variance: 8.19644e-01 (9.25568e-01), Accept ratio: 0.55115, 
+INFO:root:Epoch    28, Energy: -1.28317e+00 (-1.27045e+00), Variance: 7.70911e-01 (8.94385e-01), Accept ratio: 0.54946, 
+INFO:root:Epoch    29, Energy: -1.26666e+00 (-1.25681e+00), Variance: 7.83642e-01 (1.07329e+00), Accept ratio: 0.55258, 
+INFO:root:Epoch    30, Energy: -1.34342e+00 (-1.34103e+00), Variance: 8.52940e-01 (9.92887e-01), Accept ratio: 0.55219, 
+INFO:root:Epoch    31, Energy: -1.31801e+00 (-1.31138e+00), Variance: 6.63547e-01 (7.89141e-01), Accept ratio: 0.52196, 
+INFO:root:Epoch    32, Energy: -1.32327e+00 (-1.29366e+00), Variance: 7.17007e-01 (1.31981e+00), Accept ratio: 0.51479, 
+INFO:root:Epoch    33, Energy: -1.35016e+00 (-1.35836e+00), Variance: 6.45587e-01 (9.38939e-01), Accept ratio: 0.51857, 
+INFO:root:Epoch    34, Energy: -1.34584e+00 (-1.35216e+00), Variance: 7.60866e-01 (9.75255e-01), Accept ratio: 0.52302, 
+INFO:root:Epoch    35, Energy: -1.32037e+00 (-1.30459e+00), Variance: 7.03333e-01 (8.86229e-01), Accept ratio: 0.52189, 
+INFO:root:Epoch    36, Energy: -1.35406e+00 (-1.35024e+00), Variance: 6.24416e-01 (6.99039e-01), Accept ratio: 0.52307, 
+INFO:root:Epoch    37, Energy: -1.36881e+00 (-1.35952e+00), Variance: 6.49387e-01 (7.84566e-01), Accept ratio: 0.52024, 
+INFO:root:Epoch    38, Energy: -1.35678e+00 (-1.35389e+00), Variance: 6.15541e-01 (6.78370e-01), Accept ratio: 0.51960, 
+INFO:root:Epoch    39, Energy: -1.36783e+00 (-1.35661e+00), Variance: 6.79213e-01 (8.57134e-01), Accept ratio: 0.52328, 
+INFO:root:Epoch    40, Energy: -1.40769e+00 (-1.40522e+00), Variance: 6.33219e-01 (6.66169e-01), Accept ratio: 0.52321, 
+INFO:root:Epoch    41, Energy: -1.37498e+00 (-1.37200e+00), Variance: 5.98256e-01 (7.31275e-01), Accept ratio: 0.52179, 
+INFO:root:Epoch    42, Energy: -1.39930e+00 (-1.39162e+00), Variance: 5.72581e-01 (6.83506e-01), Accept ratio: 0.52447, 
+INFO:root:Epoch    43, Energy: -1.40980e+00 (-1.40156e+00), Variance: 6.27617e-01 (7.61172e-01), Accept ratio: 0.52221, 
+INFO:root:Epoch    44, Energy: -1.43630e+00 (-1.42718e+00), Variance: 5.92144e-01 (7.73863e-01), Accept ratio: 0.52165, 
+INFO:root:Epoch    45, Energy: -1.43329e+00 (-1.43108e+00), Variance: 5.64513e-01 (6.37630e-01), Accept ratio: 0.52568, 
+INFO:root:Epoch    46, Energy: -1.45048e+00 (-1.44439e+00), Variance: 5.43171e-01 (6.70070e-01), Accept ratio: 0.52152, 
+INFO:root:Epoch    47, Energy: -1.43343e+00 (-1.43410e+00), Variance: 5.53252e-01 (6.65847e-01), Accept ratio: 0.53449, 
+INFO:root:Epoch    48, Energy: -1.44302e+00 (-1.44019e+00), Variance: 5.91161e-01 (7.67826e-01), Accept ratio: 0.52288, 
+INFO:root:Epoch    49, Energy: -1.43445e+00 (-1.42684e+00), Variance: 6.06109e-01 (7.19986e-01), Accept ratio: 0.53030, 
+INFO:root:Epoch    50, Energy: -1.42502e+00 (-1.41082e+00), Variance: 6.05913e-01 (7.79873e-01), Accept ratio: 0.53132, 
+INFO:root:Epoch    51, Energy: -1.44474e+00 (-1.43876e+00), Variance: 5.70114e-01 (6.29163e-01), Accept ratio: 0.52588, 
+INFO:root:Epoch    52, Energy: -1.46017e+00 (-1.45551e+00), Variance: 5.23259e-01 (6.12024e-01), Accept ratio: 0.52394, 
+INFO:root:Epoch    53, Energy: -1.44654e+00 (-1.43239e+00), Variance: 5.71614e-01 (7.43833e-01), Accept ratio: 0.52354, 
+INFO:root:Epoch    54, Energy: -1.45222e+00 (-1.43382e+00), Variance: 5.39416e-01 (7.85136e-01), Accept ratio: 0.51992, 
+INFO:root:Epoch    55, Energy: -1.45995e+00 (-1.44752e+00), Variance: 5.20667e-01 (6.75933e-01), Accept ratio: 0.52618, 
+INFO:root:Epoch    56, Energy: -1.50926e+00 (-1.50279e+00), Variance: 5.05648e-01 (6.22559e-01), Accept ratio: 0.52787, 
+INFO:root:Epoch    57, Energy: -1.48552e+00 (-1.48277e+00), Variance: 5.28958e-01 (6.02273e-01), Accept ratio: 0.52785, 
+INFO:root:Epoch    58, Energy: -1.48914e+00 (-1.47822e+00), Variance: 5.32878e-01 (6.39389e-01), Accept ratio: 0.53197, 
+INFO:root:Epoch    59, Energy: -1.50909e+00 (-1.50147e+00), Variance: 4.99126e-01 (9.22725e-01), Accept ratio: 0.51780, 
+INFO:root:Epoch    60, Energy: -1.47804e+00 (-1.47899e+00), Variance: 4.37462e-01 (6.47401e-01), Accept ratio: 0.53358, 
+INFO:root:Epoch    61, Energy: -1.52401e+00 (-1.51602e+00), Variance: 4.00825e-01 (5.54541e-01), Accept ratio: 0.52192, 
+INFO:root:Epoch    62, Energy: -1.52021e+00 (-1.50948e+00), Variance: 4.53181e-01 (5.54577e-01), Accept ratio: 0.52776, 
+INFO:root:Epoch    63, Energy: -1.50275e+00 (-1.49014e+00), Variance: 3.91677e-01 (4.89437e-01), Accept ratio: 0.52600, 
+INFO:root:Epoch    64, Energy: -1.53760e+00 (-1.53280e+00), Variance: 4.33063e-01 (4.79038e-01), Accept ratio: 0.52416, 
+INFO:root:Epoch    65, Energy: -1.53238e+00 (-1.53073e+00), Variance: 3.70144e-01 (3.86679e-01), Accept ratio: 0.53626, 
+INFO:root:Epoch    66, Energy: -1.54882e+00 (-1.54106e+00), Variance: 4.00849e-01 (4.71100e-01), Accept ratio: 0.52809, 
+INFO:root:Epoch    67, Energy: -1.53458e+00 (-1.52780e+00), Variance: 4.33837e-01 (5.63409e-01), Accept ratio: 0.52427, 
+INFO:root:Epoch    68, Energy: -1.47023e+00 (-1.46245e+00), Variance: 4.47892e-01 (4.96840e-01), Accept ratio: 0.53327, 
+INFO:root:Epoch    69, Energy: -1.55818e+00 (-1.55015e+00), Variance: 4.14770e-01 (5.19461e-01), Accept ratio: 0.53095, 
+INFO:root:Epoch    70, Energy: -1.53142e+00 (-1.53042e+00), Variance: 4.40636e-01 (4.72622e-01), Accept ratio: 0.53170, 
+INFO:root:Epoch    71, Energy: -1.57146e+00 (-1.57575e+00), Variance: 3.99932e-01 (5.01057e-01), Accept ratio: 0.52306, 
+INFO:root:Epoch    72, Energy: -1.55800e+00 (-1.54846e+00), Variance: 3.16627e-01 (4.14877e-01), Accept ratio: 0.53682, 
+INFO:root:Epoch    73, Energy: -1.52687e+00 (-1.49855e+00), Variance: 3.37977e-01 (9.52348e-01), Accept ratio: 0.52791, 
+INFO:root:Epoch    74, Energy: -1.56023e+00 (-1.55876e+00), Variance: 3.38405e-01 (3.84851e-01), Accept ratio: 0.53030, 
+INFO:root:Epoch    75, Energy: -1.55191e+00 (-1.55521e+00), Variance: 3.56162e-01 (4.45440e-01), Accept ratio: 0.52797, 
+INFO:root:Epoch    76, Energy: -1.55681e+00 (-1.55461e+00), Variance: 3.51441e-01 (4.51573e-01), Accept ratio: 0.52863, 
+INFO:root:Epoch    77, Energy: -1.53272e+00 (-1.53264e+00), Variance: 3.46839e-01 (4.13427e-01), Accept ratio: 0.53003, 
+INFO:root:Epoch    78, Energy: -1.58304e+00 (-1.58737e+00), Variance: 3.55589e-01 (4.45258e-01), Accept ratio: 0.52946, 
+INFO:root:Epoch    79, Energy: -1.56320e+00 (-1.55243e+00), Variance: 3.69714e-01 (5.18614e-01), Accept ratio: 0.53240, 
+INFO:root:Epoch    80, Energy: -1.56152e+00 (-1.56382e+00), Variance: 3.56613e-01 (4.24031e-01), Accept ratio: 0.53183, 
+INFO:root:Epoch    81, Energy: -1.54562e+00 (-1.53203e+00), Variance: 3.52094e-01 (5.35943e-01), Accept ratio: 0.53148, 
+INFO:root:Epoch    82, Energy: -1.55226e+00 (-1.56031e+00), Variance: 3.56020e-01 (4.42341e-01), Accept ratio: 0.53555, 
+INFO:root:Epoch    83, Energy: -1.56871e+00 (-1.56222e+00), Variance: 2.98283e-01 (3.35837e-01), Accept ratio: 0.53320, 
+INFO:root:Epoch    84, Energy: -1.59718e+00 (-1.58908e+00), Variance: 3.37426e-01 (4.19111e-01), Accept ratio: 0.52900, 
+INFO:root:Epoch    85, Energy: -1.57647e+00 (-1.56839e+00), Variance: 3.05327e-01 (3.67252e-01), Accept ratio: 0.53435, 
+INFO:root:Epoch    86, Energy: -1.59362e+00 (-1.58703e+00), Variance: 2.73122e-01 (3.33372e-01), Accept ratio: 0.53465, 
+INFO:root:Epoch    87, Energy: -1.57095e+00 (-1.57225e+00), Variance: 2.70295e-01 (3.09293e-01), Accept ratio: 0.53064, 
+INFO:root:Epoch    88, Energy: -1.60509e+00 (-1.60637e+00), Variance: 3.38263e-01 (4.10602e-01), Accept ratio: 0.53895, 
+INFO:root:Epoch    89, Energy: -1.58113e+00 (-1.57214e+00), Variance: 2.83213e-01 (3.36317e-01), Accept ratio: 0.53391, 
+INFO:root:Epoch    90, Energy: -1.59660e+00 (-1.59588e+00), Variance: 3.03551e-01 (3.50937e-01), Accept ratio: 0.54172, 
+INFO:root:Epoch    91, Energy: -1.61871e+00 (-1.61491e+00), Variance: 2.70470e-01 (3.96666e-01), Accept ratio: 0.52806, 
+INFO:root:Epoch    92, Energy: -1.63309e+00 (-1.62746e+00), Variance: 2.87647e-01 (3.62107e-01), Accept ratio: 0.53339, 
+INFO:root:Epoch    93, Energy: -1.63174e+00 (-1.62999e+00), Variance: 2.76279e-01 (3.21302e-01), Accept ratio: 0.53742, 
+INFO:root:Epoch    94, Energy: -1.60776e+00 (-1.60397e+00), Variance: 2.85329e-01 (3.99093e-01), Accept ratio: 0.52931, 
+INFO:root:Epoch    95, Energy: -1.60710e+00 (-1.59601e+00), Variance: 2.86277e-01 (3.64036e-01), Accept ratio: 0.53568, 
+INFO:root:Epoch    96, Energy: -1.64199e+00 (-1.63393e+00), Variance: 2.78015e-01 (3.44753e-01), Accept ratio: 0.53357, 
+INFO:root:Epoch    97, Energy: -1.63865e+00 (-1.64117e+00), Variance: 2.59747e-01 (3.23364e-01), Accept ratio: 0.53581, 
+INFO:root:Epoch    98, Energy: -1.64753e+00 (-1.65652e+00), Variance: 2.42575e-01 (3.09623e-01), Accept ratio: 0.53738, 
+INFO:root:Epoch    99, Energy: -1.64571e+00 (-1.64710e+00), Variance: 2.47588e-01 (3.25084e-01), Accept ratio: 0.53573, 
+INFO:root:Epoch   100, Energy: -1.66630e+00 (-1.66398e+00), Variance: 2.32226e-01 (2.49944e-01), Accept ratio: 0.52907, , best weights saved
+INFO:root:Epoch   101, Energy: -1.62595e+00 (-1.62203e+00), Variance: 2.23807e-01 (2.56994e-01), Accept ratio: 0.53482, 
+INFO:root:Epoch   102, Energy: -1.64435e+00 (-1.64466e+00), Variance: 2.52039e-01 (3.29010e-01), Accept ratio: 0.53383, 
+INFO:root:Epoch   103, Energy: -1.64370e+00 (-1.63240e+00), Variance: 2.52246e-01 (3.14114e-01), Accept ratio: 0.54416, 
+INFO:root:Epoch   104, Energy: -1.63615e+00 (-1.63285e+00), Variance: 2.28671e-01 (2.69132e-01), Accept ratio: 0.54330, 
+INFO:root:Epoch   105, Energy: -1.65244e+00 (-1.64813e+00), Variance: 2.23951e-01 (2.45811e-01), Accept ratio: 0.53223, 
+INFO:root:Epoch   106, Energy: -1.63617e+00 (-1.63361e+00), Variance: 2.26788e-01 (2.98341e-01), Accept ratio: 0.52878, 
+INFO:root:Epoch   107, Energy: -1.64026e+00 (-1.62461e+00), Variance: 2.45855e-01 (3.67002e-01), Accept ratio: 0.53743, 
+INFO:root:Epoch   108, Energy: -1.64242e+00 (-1.64147e+00), Variance: 2.21889e-01 (2.34755e-01), Accept ratio: 0.53246, 
+INFO:root:Epoch   109, Energy: -1.64851e+00 (-1.64883e+00), Variance: 2.52134e-01 (3.08959e-01), Accept ratio: 0.53861, 
+INFO:root:Epoch   110, Energy: -1.64509e+00 (-1.63858e+00), Variance: 2.25584e-01 (2.63270e-01), Accept ratio: 0.53342, 
+INFO:root:Epoch   111, Energy: -1.65585e+00 (-1.65557e+00), Variance: 2.57501e-01 (2.82261e-01), Accept ratio: 0.53698, 
+INFO:root:Epoch   112, Energy: -1.64374e+00 (-1.63817e+00), Variance: 2.23755e-01 (2.79705e-01), Accept ratio: 0.52245, 
+INFO:root:Epoch   113, Energy: -1.67239e+00 (-1.67136e+00), Variance: 1.89133e-01 (2.04669e-01), Accept ratio: 0.53230, 
+INFO:root:Epoch   114, Energy: -1.65448e+00 (-1.65173e+00), Variance: 2.02758e-01 (2.39308e-01), Accept ratio: 0.54241, 
+INFO:root:Epoch   115, Energy: -1.68178e+00 (-1.67624e+00), Variance: 1.95463e-01 (2.51199e-01), Accept ratio: 0.53689, 
+INFO:root:Epoch   116, Energy: -1.66938e+00 (-1.66326e+00), Variance: 2.10842e-01 (2.73728e-01), Accept ratio: 0.53859, 
+INFO:root:Epoch   117, Energy: -1.68492e+00 (-1.68481e+00), Variance: 2.22973e-01 (2.48458e-01), Accept ratio: 0.53719, 
+INFO:root:Epoch   118, Energy: -1.68617e+00 (-1.69191e+00), Variance: 2.09764e-01 (3.77005e-01), Accept ratio: 0.53616, 
+INFO:root:Epoch   119, Energy: -1.67851e+00 (-1.67383e+00), Variance: 1.93304e-01 (2.32392e-01), Accept ratio: 0.53770, 
+INFO:root:Epoch   120, Energy: -1.67380e+00 (-1.67154e+00), Variance: 1.74661e-01 (1.87990e-01), Accept ratio: 0.53998, 
+INFO:root:Epoch   121, Energy: -1.68976e+00 (-1.68586e+00), Variance: 1.87308e-01 (2.06367e-01), Accept ratio: 0.53878, 
+INFO:root:Epoch   122, Energy: -1.67203e+00 (-1.67152e+00), Variance: 1.73090e-01 (1.85204e-01), Accept ratio: 0.53677, 
+INFO:root:Epoch   123, Energy: -1.69315e+00 (-1.69038e+00), Variance: 2.06401e-01 (2.19727e-01), Accept ratio: 0.53891, 
+INFO:root:Epoch   124, Energy: -1.69631e+00 (-1.69153e+00), Variance: 1.77376e-01 (3.70489e-01), Accept ratio: 0.53738, 
+INFO:root:Epoch   125, Energy: -1.69180e+00 (-1.69053e+00), Variance: 1.67641e-01 (1.76694e-01), Accept ratio: 0.53614, 
+INFO:root:Epoch   126, Energy: -1.70317e+00 (-1.70977e+00), Variance: 1.81505e-01 (3.02935e-01), Accept ratio: 0.54223, 
+INFO:root:Epoch   127, Energy: -1.70463e+00 (-1.70392e+00), Variance: 2.05903e-01 (2.46665e-01), Accept ratio: 0.53596, 
+INFO:root:Epoch   128, Energy: -1.70305e+00 (-1.70031e+00), Variance: 1.95460e-01 (2.17375e-01), Accept ratio: 0.53756, 
+INFO:root:Epoch   129, Energy: -1.72582e+00 (-1.72469e+00), Variance: 1.77910e-01 (2.69309e-01), Accept ratio: 0.54026, 
+INFO:root:Epoch   130, Energy: -1.69921e+00 (-1.69095e+00), Variance: 1.68026e-01 (2.08485e-01), Accept ratio: 0.54281, 
+INFO:root:Epoch   131, Energy: -1.70929e+00 (-1.70919e+00), Variance: 1.63647e-01 (1.86203e-01), Accept ratio: 0.53700, 
+INFO:root:Epoch   132, Energy: -1.71628e+00 (-1.71432e+00), Variance: 1.56509e-01 (1.96044e-01), Accept ratio: 0.53853, 
+INFO:root:Epoch   133, Energy: -1.73087e+00 (-1.72762e+00), Variance: 1.68499e-01 (1.90558e-01), Accept ratio: 0.54053, 
+INFO:root:Epoch   134, Energy: -1.73350e+00 (-1.72578e+00), Variance: 1.63433e-01 (2.02874e-01), Accept ratio: 0.53491, 
+INFO:root:Epoch   135, Energy: -1.72638e+00 (-1.72815e+00), Variance: 1.60985e-01 (1.82266e-01), Accept ratio: 0.54010, 
+INFO:root:Epoch   136, Energy: -1.72284e+00 (-1.71630e+00), Variance: 1.74464e-01 (2.37263e-01), Accept ratio: 0.53370, 
+INFO:root:Epoch   137, Energy: -1.73949e+00 (-1.74032e+00), Variance: 1.77900e-01 (2.06842e-01), Accept ratio: 0.53128, 
+INFO:root:Epoch   138, Energy: -1.70561e+00 (-1.70941e+00), Variance: 1.80329e-01 (2.31692e-01), Accept ratio: 0.53193, 
+INFO:root:Epoch   139, Energy: -1.71757e+00 (-1.71280e+00), Variance: 1.81512e-01 (2.10837e-01), Accept ratio: 0.54101, 
+INFO:root:Epoch   140, Energy: -1.71486e+00 (-1.71239e+00), Variance: 1.77062e-01 (1.88882e-01), Accept ratio: 0.54540, 
+INFO:root:Epoch   141, Energy: -1.69127e+00 (-1.68478e+00), Variance: 1.69807e-01 (2.23229e-01), Accept ratio: 0.53298, 
+INFO:root:Epoch   142, Energy: -1.71755e+00 (-1.70946e+00), Variance: 1.68142e-01 (2.62938e-01), Accept ratio: 0.53220, 
+INFO:root:Epoch   143, Energy: -1.71656e+00 (-1.71506e+00), Variance: 1.65895e-01 (1.82217e-01), Accept ratio: 0.53966, 
+INFO:root:Epoch   144, Energy: -1.72497e+00 (-1.71677e+00), Variance: 1.45177e-01 (2.18065e-01), Accept ratio: 0.54016, 
+INFO:root:Epoch   145, Energy: -1.72601e+00 (-1.71695e+00), Variance: 1.54516e-01 (2.15859e-01), Accept ratio: 0.53484, 
+INFO:root:Epoch   146, Energy: -1.73625e+00 (-1.73864e+00), Variance: 1.42342e-01 (2.36504e-01), Accept ratio: 0.53356, 
+INFO:root:Epoch   147, Energy: -1.73610e+00 (-1.73402e+00), Variance: 1.39764e-01 (1.52644e-01), Accept ratio: 0.53989, 
+INFO:root:Epoch   148, Energy: -1.72682e+00 (-1.72825e+00), Variance: 1.56221e-01 (1.88112e-01), Accept ratio: 0.53758, 
+INFO:root:Epoch   149, Energy: -1.72233e+00 (-1.72008e+00), Variance: 1.33947e-01 (1.48118e-01), Accept ratio: 0.53573, 
+INFO:root:Epoch   150, Energy: -1.73415e+00 (-1.73321e+00), Variance: 1.56584e-01 (1.66714e-01), Accept ratio: 0.53737, 
+INFO:root:Epoch   151, Energy: -1.74066e+00 (-1.73735e+00), Variance: 1.28138e-01 (1.66067e-01), Accept ratio: 0.52908, 
+INFO:root:Epoch   152, Energy: -1.72771e+00 (-1.72565e+00), Variance: 1.37699e-01 (1.48190e-01), Accept ratio: 0.54090, 
+INFO:root:Epoch   153, Energy: -1.72081e+00 (-1.72001e+00), Variance: 1.30430e-01 (1.46469e-01), Accept ratio: 0.54133, 
+INFO:root:Epoch   154, Energy: -1.73224e+00 (-1.73068e+00), Variance: 1.21717e-01 (1.40112e-01), Accept ratio: 0.54044, 
+INFO:root:Epoch   155, Energy: -1.73115e+00 (-1.72731e+00), Variance: 1.33990e-01 (1.53266e-01), Accept ratio: 0.53018, 
+INFO:root:Epoch   156, Energy: -1.74654e+00 (-1.73903e+00), Variance: 1.31898e-01 (1.72178e-01), Accept ratio: 0.54828, 
+INFO:root:Epoch   157, Energy: -1.73097e+00 (-1.72375e+00), Variance: 1.33044e-01 (1.63707e-01), Accept ratio: 0.53677, 
+INFO:root:Epoch   158, Energy: -1.74383e+00 (-1.74043e+00), Variance: 1.34532e-01 (1.52851e-01), Accept ratio: 0.53800, 
+INFO:root:Epoch   159, Energy: -1.73724e+00 (-1.72957e+00), Variance: 1.31158e-01 (1.91689e-01), Accept ratio: 0.53298, 
+INFO:root:Epoch   160, Energy: -1.74773e+00 (-1.74603e+00), Variance: 1.16885e-01 (1.34211e-01), Accept ratio: 0.53137, 
+INFO:root:Epoch   161, Energy: -1.74253e+00 (-1.74029e+00), Variance: 1.32207e-01 (1.40053e-01), Accept ratio: 0.54655, 
+INFO:root:Epoch   162, Energy: -1.76009e+00 (-1.75468e+00), Variance: 1.18019e-01 (1.44681e-01), Accept ratio: 0.53703, 
+INFO:root:Epoch   163, Energy: -1.75013e+00 (-1.73988e+00), Variance: 1.37550e-01 (1.95672e-01), Accept ratio: 0.53386, 
+INFO:root:Epoch   164, Energy: -1.75761e+00 (-1.75695e+00), Variance: 1.30273e-01 (1.58901e-01), Accept ratio: 0.53130, 
+INFO:root:Epoch   165, Energy: -1.75809e+00 (-1.75572e+00), Variance: 1.16018e-01 (1.58651e-01), Accept ratio: 0.53467, 
+INFO:root:Epoch   166, Energy: -1.74140e+00 (-1.74046e+00), Variance: 1.20674e-01 (1.28828e-01), Accept ratio: 0.54139, 
+INFO:root:Epoch   167, Energy: -1.75142e+00 (-1.74619e+00), Variance: 1.18175e-01 (1.62168e-01), Accept ratio: 0.53777, 
+INFO:root:Epoch   168, Energy: -1.75042e+00 (-1.74010e+00), Variance: 9.95062e-02 (1.97137e-01), Accept ratio: 0.54441, 
+INFO:root:Epoch   169, Energy: -1.76933e+00 (-1.76972e+00), Variance: 1.26495e-01 (1.37652e-01), Accept ratio: 0.53621, 
+INFO:root:Epoch   170, Energy: -1.75606e+00 (-1.75481e+00), Variance: 1.10995e-01 (1.14596e-01), Accept ratio: 0.53833, 
+INFO:root:Epoch   171, Energy: -1.74719e+00 (-1.74676e+00), Variance: 1.19355e-01 (1.38233e-01), Accept ratio: 0.53706, 
+INFO:root:Epoch   172, Energy: -1.77266e+00 (-1.77179e+00), Variance: 1.19613e-01 (1.63107e-01), Accept ratio: 0.54216, 
+INFO:root:Epoch   173, Energy: -1.78087e+00 (-1.78221e+00), Variance: 1.05649e-01 (1.19640e-01), Accept ratio: 0.53618, 
+INFO:root:Epoch   174, Energy: -1.77053e+00 (-1.76327e+00), Variance: 1.03609e-01 (1.34089e-01), Accept ratio: 0.53131, 
+INFO:root:Epoch   175, Energy: -1.78393e+00 (-1.78171e+00), Variance: 1.04620e-01 (1.32698e-01), Accept ratio: 0.53494, 
+INFO:root:Epoch   176, Energy: -1.77344e+00 (-1.76998e+00), Variance: 1.08096e-01 (1.19623e-01), Accept ratio: 0.53825, 
+INFO:root:Epoch   177, Energy: -1.76796e+00 (-1.76506e+00), Variance: 1.11953e-01 (1.20654e-01), Accept ratio: 0.54049, 
+INFO:root:Epoch   178, Energy: -1.76968e+00 (-1.76976e+00), Variance: 1.04415e-01 (1.13904e-01), Accept ratio: 0.53563, 
+INFO:root:Epoch   179, Energy: -1.78866e+00 (-1.79429e+00), Variance: 9.94006e-02 (1.50247e-01), Accept ratio: 0.53504, 
+INFO:root:Epoch   180, Energy: -1.79314e+00 (-1.79052e+00), Variance: 1.05773e-01 (1.22602e-01), Accept ratio: 0.54078, 
+INFO:root:Epoch   181, Energy: -1.78584e+00 (-1.78357e+00), Variance: 1.02878e-01 (1.12672e-01), Accept ratio: 0.53671, 
+INFO:root:Epoch   182, Energy: -1.79889e+00 (-1.79595e+00), Variance: 1.00718e-01 (1.13771e-01), Accept ratio: 0.53415, 
+INFO:root:Epoch   183, Energy: -1.79546e+00 (-1.79369e+00), Variance: 8.67988e-02 (9.17617e-02), Accept ratio: 0.54432, 
+INFO:root:Epoch   184, Energy: -1.79515e+00 (-1.79196e+00), Variance: 8.98002e-02 (1.15765e-01), Accept ratio: 0.53963, 
+INFO:root:Epoch   185, Energy: -1.80456e+00 (-1.80774e+00), Variance: 9.95963e-02 (1.30833e-01), Accept ratio: 0.53028, 
+INFO:root:Epoch   186, Energy: -1.77782e+00 (-1.77423e+00), Variance: 1.02051e-01 (1.26955e-01), Accept ratio: 0.53077, 
+INFO:root:Epoch   187, Energy: -1.78941e+00 (-1.78894e+00), Variance: 8.81451e-02 (9.57205e-02), Accept ratio: 0.53531, 
+INFO:root:Epoch   188, Energy: -1.79336e+00 (-1.79291e+00), Variance: 9.60549e-02 (9.96028e-02), Accept ratio: 0.53760, 
+INFO:root:Epoch   189, Energy: -1.79341e+00 (-1.79716e+00), Variance: 9.62903e-02 (1.24445e-01), Accept ratio: 0.53745, 
+INFO:root:Epoch   190, Energy: -1.79735e+00 (-1.79506e+00), Variance: 9.95608e-02 (1.19270e-01), Accept ratio: 0.52709, 
+INFO:root:Epoch   191, Energy: -1.80182e+00 (-1.79988e+00), Variance: 9.72898e-02 (1.31014e-01), Accept ratio: 0.53470, 
+INFO:root:Epoch   192, Energy: -1.78566e+00 (-1.78164e+00), Variance: 9.81033e-02 (1.21814e-01), Accept ratio: 0.53371, 
+INFO:root:Epoch   193, Energy: -1.79570e+00 (-1.80057e+00), Variance: 1.01378e-01 (1.36632e-01), Accept ratio: 0.53974, 
+INFO:root:Epoch   194, Energy: -1.79599e+00 (-1.79261e+00), Variance: 9.33467e-02 (1.07871e-01), Accept ratio: 0.53952, 
+INFO:root:Epoch   195, Energy: -1.78741e+00 (-1.78695e+00), Variance: 9.70887e-02 (1.36363e-01), Accept ratio: 0.54116, 
+INFO:root:Epoch   196, Energy: -1.77777e+00 (-1.77421e+00), Variance: 9.29412e-02 (1.07326e-01), Accept ratio: 0.54218, 
+INFO:root:Epoch   197, Energy: -1.78404e+00 (-1.78668e+00), Variance: 8.83327e-02 (1.14491e-01), Accept ratio: 0.53425, 
+INFO:root:Epoch   198, Energy: -1.78391e+00 (-1.78354e+00), Variance: 8.55293e-02 (9.55462e-02), Accept ratio: 0.53774, 
+INFO:root:Epoch   199, Energy: -1.79414e+00 (-1.79173e+00), Variance: 8.60365e-02 (9.30898e-02), Accept ratio: 0.53694, 
+INFO:root:Epoch   200, Energy: -1.79171e+00 (-1.78944e+00), Variance: 8.55829e-02 (9.19004e-02), Accept ratio: 0.53397, , regular ckpt saved, best weights saved
+INFO:root:Completed VMC! Evaluating
+INFO:root:Burning data for 0 steps
+SMOKE END 2026-08-02T13:23:04-07:00

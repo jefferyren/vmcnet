@@ -1,0 +1,2 @@
+ERROR: /global/scratch/users/ren27/vmcnet_logs/carbon_prelim already exists.
+Move or delete it, or the array job will reload a stale checkpoint.
