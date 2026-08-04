@@ -1,0 +1,309 @@
+jax devices: [CudaDevice(id=0)]
+wandb: WARNING Unable to verify login in offline mode.
+wandb: Tracking run with wandb version 0.28.1
+wandb: W&B syncing is set to `offline` in this directory. Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
+wandb: Run data is saved locally in /global/scratch/users/ren27/wandb/wandb/offline-run-20260802_160455-97pmq02t
+wandb: View this run in the terminal with `wandb leet`
+INFO:root:Reload configuration: 
+append: true
+checkpoint_relative_file_path: best_checkpoint.npz
+config_relative_file_path: config.json
+logdir: NONE
+new_optimizer_state: false
+reburn: false
+same_logdir: false
+use_checkpoint_file: true
+use_config_file: true
+
+INFO:root:Running with configuration: 
+base_logdir: /global/scratch/users/ren27/vmcnet_logs/phase_a/e2_eta_sweep_carbon
+debug_nans: false
+distribute: false
+dtype: float32
+eval:
+  nan_safe: false
+  nburn: 0
+  nchains: 2000
+  nepochs: 0
+  nmoves_per_width_update: 100
+  nsteps_per_param_update: 10
+  record_amplitudes: false
+  record_local_energies: true
+  std_move: 0.25
+  use_data_from_training: false
+initial_seed: 0
+logdir: /global/scratch/users/ren27/vmcnet_logs/phase_a/e2_eta_sweep_carbon/e2_carbon_same_sampled_spring_unified_eta0.1_conOFF_s0
+logging_level: INFO
+model:
+  backflow:
+    activation_fn: tanh
+    bias_init_1e_stream:
+      type: normal
+    bias_init_2e_stream:
+      type: normal
+    kernel_init_2e_1e_stream:
+      scale: 1.0
+      type: orthogonal
+    kernel_init_2e_2e_stream:
+      scale: 2.0
+      type: orthogonal
+    kernel_init_mixed:
+      scale: 1.0
+      type: orthogonal
+    kernel_init_unmixed:
+      scale: 2.0
+      type: orthogonal
+    ndense_list: !!python/tuple
+    - &id001 !!python/tuple
+      - 256
+      - 16
+    - *id001
+    - *id001
+    - !!python/tuple
+      - 256
+    one_electron_skip: true
+    one_electron_skip_scale: 1.0
+    two_electron_skip: true
+    two_electron_skip_scale: 1.0
+    use_bias: true
+  bias_init_orbital_linear:
+    type: normal
+  envelope_softening: 0.0
+  full_det: true
+  include_cusp_jastrow: false
+  input_streams:
+    ee_norm_softening: 0.0
+    ei_norm_softening: 0.0
+    include_2e_stream: true
+    include_ee_norm: true
+    include_ei_norm: true
+  isotropic_decay: true
+  kernel_init_envelope_dim:
+    type: ones
+  kernel_init_envelope_ion:
+    type: ones
+  kernel_init_orbital_linear:
+    scale: 2.0
+    type: orthogonal
+  ndeterminants: 16
+  orbitals_use_bias: true
+  type: ferminet
+notes: Carbon atom, tuned settings from SPRING paper (arXiv:2401.10190)
+problem:
+  ee_softening: 0.0
+  ei_softening: 0.0
+  ion_charges: !!python/tuple
+  - 6.0
+  ion_pos: !!python/tuple
+  - !!python/tuple
+    - 0.0
+    - 0.0
+    - 0.0
+  nelec: !!python/tuple
+  - 4
+  - 2
+save_to_current_datetime_subfolder: false
+subfolder_name: e2_carbon_same_sampled_spring_unified_eta0.1_conOFF_s0
+vmc:
+  best_checkpoint_every: 100
+  check_for_nans: true
+  checkpoint_dir: checkpoints
+  checkpoint_every: 5000
+  checkpoint_variance_scale: 10
+  clip_center: mean
+  clip_threshold: 5.0
+  nan_safe: true
+  nburn: 5000
+  nchains: 1000
+  nepochs: 25000
+  nhistory_max: 200
+  nmoves_per_width_update: 100
+  nsteps_per_param_update: 10
+  optimizer:
+    adam:
+      b1: 0.9
+      b2: 0.999
+      eps: 1.0e-08
+      eps_root: 0.0
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      schedule_type: inverse_time
+    gauss_newton:
+      E: 0.0
+      clip_threshold: 1000.0
+      constrain_norm: true
+      damping: 0.001
+      learning_decay_rate: 0.0001
+      learning_rate: 1.0
+      norm_constraint: 0.001
+      schedule_type: inverse_time
+    kfac:
+      curvature_ema: 0.95
+      damping: 0.001
+      estimation_mode: fisher_exact
+      inverse_update_period: 1
+      l2_reg: 0.0
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      min_damping: 0.0001
+      norm_constraint: 0.001
+      register_only_generic: false
+      schedule_type: inverse_time
+    prime_sr:
+      constrain_norm: true
+      damping: 0.001
+      learning_decay_rate: 0.0001
+      learning_rate: 0.02
+      mu_cap: 1.0
+      norm_constraint: 0.001
+      schedule_type: inverse_time
+    same_sampled_spring_unified:
+      adaptive_eta: false
+      adaptive_probe: false
+      constrain_norm: false
+      damping: 0.001
+      lb_window: 30
+      learning_decay_rate: 0.0001
+      learning_rate: 0.1
+      mu: 0.0
+      norm_constraint: 0.001
+      probe_damping: 0.001
+      probe_lr: -1.0
+      schedule_type: inverse_time
+    sgd:
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      momentum: 0.0
+      nesterov: false
+      schedule_type: inverse_time
+    spring:
+      constrain_norm: true
+      damping: 0.001
+      learning_decay_rate: 0.0001
+      learning_rate: 0.05
+      mu: 0.99
+      norm_constraint: 0.001
+      schedule_type: inverse_time
+  optimizer_type: same_sampled_spring_unified
+  record_amplitudes: false
+  record_param_l1_norm: false
+  std_move: 0.25
+wandb:
+  group: e2-eta-carbon-conOFF
+  mode: offline
+  name: e2_carbon_same_sampled_spring_unified_eta0.1_conOFF_s0
+  project: vmcnet-phase-a
+
+INFO:jax._src.xla_bridge:Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:jax._src.xla_bridge:Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+INFO:root:Saving to /global/scratch/users/ren27/vmcnet_logs/phase_a/e2_eta_sweep_carbon/e2_carbon_same_sampled_spring_unified_eta0.1_conOFF_s0
+INFO:root:Burning data for 5000 steps
+INFO:root:Epoch     1, Energy: -1.52506e+01 (-1.54799e+01), Variance: 4.60895e+01 (6.69962e+01), Accept ratio: 0.47033, 
+INFO:root:Epoch     2, Energy: -1.59052e+01 (-1.60019e+01), Variance: 6.28646e+01 (7.05009e+01), Accept ratio: 0.47232, 
+INFO:root:Epoch     3, Energy: -1.60096e+01 (-1.61235e+01), Variance: 6.35948e+01 (7.30044e+01), Accept ratio: 0.47775, 
+INFO:root:Epoch     4, Energy: -1.71526e+01 (-1.72852e+01), Variance: 6.48027e+01 (7.72033e+01), Accept ratio: 0.46638, 
+INFO:root:Epoch     5, Energy: -1.83097e+01 (-1.87970e+01), Variance: 7.90888e+01 (1.52875e+02), Accept ratio: 0.44901, 
+INFO:root:Epoch     6, Energy: -1.99195e+01 (-2.01446e+01), Variance: 9.37757e+01 (1.19113e+02), Accept ratio: 0.43856, 
+INFO:root:Epoch     7, Energy: -2.12982e+01 (-2.17157e+01), Variance: 8.77748e+01 (1.49813e+02), Accept ratio: 0.41940, 
+INFO:root:Epoch     8, Energy: -2.28034e+01 (-2.32387e+01), Variance: 8.28752e+01 (1.56628e+02), Accept ratio: 0.39970, 
+INFO:root:Epoch     9, Energy: -2.46287e+01 (-2.48422e+01), Variance: 8.05464e+01 (1.05484e+02), Accept ratio: 0.37874, 
+INFO:root:Epoch    10, Energy: -2.57012e+01 (-2.57699e+01), Variance: 7.88646e+01 (8.52686e+01), Accept ratio: 0.36726, 
+INFO:root:Epoch    11, Energy: -2.64453e+01 (-2.66561e+01), Variance: 7.20289e+01 (9.73776e+01), Accept ratio: 0.39113, 
+INFO:root:Epoch    12, Energy: -2.77496e+01 (-2.79977e+01), Variance: 6.83310e+01 (9.66892e+01), Accept ratio: 0.37665, 
+INFO:root:Epoch    13, Energy: -2.85393e+01 (-2.87077e+01), Variance: 7.40892e+01 (9.25863e+01), Accept ratio: 0.35671, 
+INFO:root:Epoch    14, Energy: -2.99240e+01 (-3.00339e+01), Variance: 6.54094e+01 (8.51389e+01), Accept ratio: 0.33009, 
+INFO:root:Epoch    15, Energy: -2.97880e+01 (-2.99550e+01), Variance: 6.73182e+01 (8.27353e+01), Accept ratio: 0.33757, 
+INFO:root:Epoch    16, Energy: -3.13798e+01 (-3.16288e+01), Variance: 7.43301e+01 (1.03465e+02), Accept ratio: 0.33085, 
+INFO:root:Epoch    17, Energy: -3.17829e+01 (-3.19457e+01), Variance: 7.52087e+01 (8.77687e+01), Accept ratio: 0.32823, 
+INFO:root:Epoch    18, Energy: -3.20108e+01 (-3.21521e+01), Variance: 6.29082e+01 (7.41357e+01), Accept ratio: 0.31182, 
+INFO:root:Epoch    19, Energy: -3.33988e+01 (-3.36970e+01), Variance: 4.14019e+01 (7.79100e+01), Accept ratio: 0.27917, 
+INFO:root:Epoch    20, Energy: -3.39530e+01 (-3.42248e+01), Variance: 4.68236e+01 (7.25172e+01), Accept ratio: 0.27307, 
+INFO:root:Epoch    21, Energy: -3.41351e+01 (-3.42645e+01), Variance: 4.13020e+01 (5.84991e+01), Accept ratio: 0.30274, 
+INFO:root:Epoch    22, Energy: -3.51879e+01 (-3.52533e+01), Variance: 2.52885e+01 (3.25640e+01), Accept ratio: 0.28062, 
+INFO:root:Epoch    23, Energy: -3.58952e+01 (-3.59199e+01), Variance: 1.72671e+01 (2.46017e+01), Accept ratio: 0.26702, 
+INFO:root:Epoch    24, Energy: -3.62479e+01 (-3.64145e+01), Variance: 1.64096e+01 (4.25477e+01), Accept ratio: 0.25373, 
+INFO:root:Epoch    25, Energy: -3.65992e+01 (-3.66421e+01), Variance: 1.21005e+01 (2.08832e+01), Accept ratio: 0.23437, 
+INFO:root:Epoch    26, Energy: -3.64016e+01 (-3.64593e+01), Variance: 1.67813e+01 (2.02792e+01), Accept ratio: 0.24279, 
+INFO:root:Epoch    27, Energy: -3.60039e+01 (-3.61841e+01), Variance: 2.71449e+01 (4.35803e+01), Accept ratio: 0.25374, 
+INFO:root:Epoch    28, Energy: -3.65562e+01 (-3.66762e+01), Variance: 1.78501e+01 (3.17702e+01), Accept ratio: 0.24356, 
+INFO:root:Epoch    29, Energy: -3.68591e+01 (-3.68637e+01), Variance: 1.14555e+01 (2.19608e+01), Accept ratio: 0.23484, 
+INFO:root:Epoch    30, Energy: -3.69342e+01 (-3.69007e+01), Variance: 8.56664e+00 (1.18025e+01), Accept ratio: 0.22664, 
+INFO:root:Epoch    31, Energy: -3.70058e+01 (-3.69742e+01), Variance: 7.11590e+00 (1.11788e+01), Accept ratio: 0.25997, 
+INFO:root:Epoch    32, Energy: -3.68392e+01 (-3.68778e+01), Variance: 8.26672e+00 (1.19779e+01), Accept ratio: 0.27003, 
+INFO:root:Epoch    33, Energy: -3.69341e+01 (-3.69242e+01), Variance: 6.32915e+00 (1.44364e+01), Accept ratio: 0.25256, 
+INFO:root:Epoch    34, Energy: -3.70259e+01 (-3.70592e+01), Variance: 7.26588e+00 (1.10462e+01), Accept ratio: 0.25892, 
+INFO:root:Epoch    35, Energy: -3.72852e+01 (-3.71905e+01), Variance: 6.20395e+00 (9.69898e+00), Accept ratio: 0.24425, 
+INFO:root:Epoch    36, Energy: -3.70742e+01 (-3.73278e+01), Variance: 1.30827e+01 (3.03832e+01), Accept ratio: 0.25795, 
+INFO:root:Epoch    37, Energy: -3.69362e+01 (-3.69620e+01), Variance: 8.51975e+00 (9.83898e+00), Accept ratio: 0.25892, 
+INFO:root:Epoch    38, Energy: -3.71961e+01 (-3.72764e+01), Variance: 5.68532e+00 (1.12595e+01), Accept ratio: 0.25559, 
+INFO:root:Epoch    39, Energy: -3.71774e+01 (-3.72227e+01), Variance: 5.97794e+00 (9.57457e+00), Accept ratio: 0.24960, 
+INFO:root:Epoch    40, Energy: -3.70775e+01 (-3.70376e+01), Variance: 4.85917e+00 (6.81340e+00), Accept ratio: 0.24985, 
+INFO:root:Epoch    41, Energy: -3.71392e+01 (-3.71500e+01), Variance: 4.06919e+00 (4.51145e+00), Accept ratio: 0.29711, 
+INFO:root:Epoch    42, Energy: -3.71229e+01 (-3.71464e+01), Variance: 3.58161e+00 (4.56645e+00), Accept ratio: 0.29470, 
+INFO:root:Epoch    43, Energy: -3.72177e+01 (-3.72050e+01), Variance: 2.93497e+00 (3.55438e+00), Accept ratio: 0.28958, 
+INFO:root:Epoch    44, Energy: -3.70814e+01 (-3.70709e+01), Variance: 3.14193e+00 (4.51075e+00), Accept ratio: 0.28538, 
+INFO:root:Epoch    45, Energy: -3.71952e+01 (-3.71245e+01), Variance: 3.09178e+00 (9.34255e+00), Accept ratio: 0.28463, 
+INFO:root:Epoch    46, Energy: -3.71749e+01 (-3.72011e+01), Variance: 3.26390e+00 (5.68145e+00), Accept ratio: 0.28397, 
+INFO:root:Epoch    47, Energy: -3.71630e+01 (-3.71482e+01), Variance: 2.68715e+00 (4.76843e+00), Accept ratio: 0.28258, 
+INFO:root:Epoch    48, Energy: -3.71827e+01 (-3.72017e+01), Variance: 2.85200e+00 (4.51745e+00), Accept ratio: 0.28952, 
+INFO:root:Epoch    49, Energy: -3.71881e+01 (-3.72033e+01), Variance: 3.39513e+00 (7.44641e+00), Accept ratio: 0.28842, 
+INFO:root:Epoch    50, Energy: -3.73316e+01 (-3.72785e+01), Variance: 3.28587e+00 (4.54739e+00), Accept ratio: 0.28474, 
+INFO:root:Epoch    51, Energy: -3.71637e+01 (-3.72664e+01), Variance: 6.86472e+00 (1.16978e+01), Accept ratio: 0.32633, 
+INFO:root:Epoch    52, Energy: -3.72347e+01 (-3.72173e+01), Variance: 4.50766e+00 (6.51098e+00), Accept ratio: 0.32689, 
+INFO:root:Epoch    53, Energy: -3.70171e+01 (-3.70777e+01), Variance: 7.41232e+00 (1.44854e+01), Accept ratio: 0.33714, 
+INFO:root:Epoch    54, Energy: -3.73316e+01 (-3.73057e+01), Variance: 3.95586e+00 (4.64444e+00), Accept ratio: 0.32320, 
+INFO:root:Epoch    55, Energy: -3.71968e+01 (-3.72406e+01), Variance: 4.63105e+00 (6.41692e+00), Accept ratio: 0.33305, 
+INFO:root:Epoch    56, Energy: -3.72793e+01 (-3.72754e+01), Variance: 2.93791e+00 (4.20598e+00), Accept ratio: 0.32781, 
+INFO:root:Epoch    57, Energy: -3.72242e+01 (-3.72275e+01), Variance: 2.52918e+00 (2.90798e+00), Accept ratio: 0.32264, 
+INFO:root:Epoch    58, Energy: -3.72623e+01 (-3.72666e+01), Variance: 2.31422e+00 (2.49282e+00), Accept ratio: 0.32756, 
+INFO:root:Epoch    59, Energy: -3.71646e+01 (-3.71592e+01), Variance: 2.09149e+00 (2.92117e+00), Accept ratio: 0.33250, 
+INFO:root:Epoch    60, Energy: -3.72439e+01 (-3.72004e+01), Variance: 2.40778e+00 (3.75035e+00), Accept ratio: 0.32556, 
+INFO:root:Epoch    61, Energy: -3.72073e+01 (-3.72207e+01), Variance: 2.04964e+00 (3.01870e+00), Accept ratio: 0.36461, 
+INFO:root:Epoch    62, Energy: -3.72696e+01 (-3.72818e+01), Variance: 2.46733e+00 (2.89619e+00), Accept ratio: 0.36921, 
+INFO:root:Epoch    63, Energy: -3.72946e+01 (-3.72614e+01), Variance: 1.93641e+00 (4.76241e+00), Accept ratio: 0.36774, 
+INFO:root:Epoch    64, Energy: -3.72922e+01 (-3.73026e+01), Variance: 2.50992e+00 (3.39837e+00), Accept ratio: 0.37590, 
+INFO:root:Epoch    65, Energy: -3.74078e+01 (-3.73924e+01), Variance: 2.23389e+00 (2.66656e+00), Accept ratio: 0.36512, 
+INFO:root:Epoch    66, Energy: -3.73728e+01 (-3.74732e+01), Variance: 2.29776e+00 (1.14962e+01), Accept ratio: 0.36591, 
+INFO:root:Epoch    67, Energy: -3.73084e+01 (-3.72864e+01), Variance: 2.24967e+00 (2.84927e+00), Accept ratio: 0.35800, 
+INFO:root:Epoch    68, Energy: -3.72371e+01 (-3.72754e+01), Variance: 3.78110e+00 (4.71361e+00), Accept ratio: 0.37249, 
+INFO:root:Epoch    69, Energy: -3.72698e+01 (-3.72659e+01), Variance: 3.25637e+00 (3.71261e+00), Accept ratio: 0.37160, 
+INFO:root:Epoch    70, Energy: -3.72583e+01 (-3.73207e+01), Variance: 4.12285e+00 (7.99522e+00), Accept ratio: 0.36996, 
+INFO:root:Epoch    71, Energy: -3.72516e+01 (-3.71886e+01), Variance: 2.80999e+00 (5.26129e+00), Accept ratio: 0.41056, 
+INFO:root:Epoch    72, Energy: -3.73967e+01 (-3.73671e+01), Variance: 3.36360e+00 (4.49991e+00), Accept ratio: 0.41057, 
+INFO:root:Epoch    73, Energy: -3.74075e+01 (-3.73462e+01), Variance: 3.48115e+00 (5.85580e+00), Accept ratio: 0.40345, 
+INFO:root:Epoch    74, Energy: -3.72752e+01 (-3.73010e+01), Variance: 3.77021e+00 (5.34564e+00), Accept ratio: 0.40959, 
+INFO:root:Epoch    75, Energy: -3.73327e+01 (-3.72952e+01), Variance: 4.18560e+00 (6.26182e+00), Accept ratio: 0.41330, 
+INFO:root:Epoch    76, Energy: -3.73610e+01 (-3.73124e+01), Variance: 6.11858e+00 (9.44161e+00), Accept ratio: 0.40409, 
+INFO:root:Epoch    77, Energy: -3.73677e+01 (-3.73759e+01), Variance: 5.80129e+00 (6.63837e+00), Accept ratio: 0.40864, 
+INFO:root:Epoch    78, Energy: -3.73455e+01 (-3.72218e+01), Variance: 5.26766e+00 (1.40233e+01), Accept ratio: 0.40507, 
+INFO:root:Epoch    79, Energy: -3.73017e+01 (-3.72258e+01), Variance: 6.78971e+00 (9.91179e+00), Accept ratio: 0.40539, 
+INFO:root:Epoch    80, Energy: -3.74071e+01 (-3.73900e+01), Variance: 8.28664e+00 (1.20968e+01), Accept ratio: 0.40387, 
+INFO:root:Epoch    81, Energy: -3.73320e+01 (-3.73384e+01), Variance: 9.32995e+00 (1.33476e+01), Accept ratio: 0.45135, 
+INFO:root:Epoch    82, Energy: -3.73077e+01 (-3.72342e+01), Variance: 1.26729e+01 (1.94010e+01), Accept ratio: 0.45324, 
+INFO:root:Epoch    83, Energy: -3.74072e+01 (-3.75281e+01), Variance: 1.39473e+01 (3.04199e+01), Accept ratio: 0.44629, 
+INFO:root:Epoch    84, Energy: -3.70650e+01 (-3.71279e+01), Variance: 1.48289e+01 (2.48465e+01), Accept ratio: 0.45892, 
+INFO:root:Epoch    85, Energy: -3.74707e+01 (-3.74083e+01), Variance: 1.85538e+01 (2.47079e+01), Accept ratio: 0.44045, 
+INFO:root:Epoch    86, Energy: -3.71874e+01 (-3.72116e+01), Variance: 2.43993e+01 (3.21271e+01), Accept ratio: 0.44653, 
+INFO:root:Epoch    87, Energy: -3.72032e+01 (-3.73394e+01), Variance: 2.85990e+01 (5.24375e+01), Accept ratio: 0.45515, 
+INFO:root:Epoch    88, Energy: -3.70614e+01 (-3.70513e+01), Variance: 3.48684e+01 (4.25945e+01), Accept ratio: 0.44764, 
+INFO:root:Epoch    89, Energy: -3.71538e+01 (-3.71410e+01), Variance: 3.91355e+01 (4.68122e+01), Accept ratio: 0.45440, 
+INFO:root:Epoch    90, Energy: -3.76260e+01 (-3.78042e+01), Variance: 7.23193e+01 (1.11806e+02), Accept ratio: 0.45586, 
+INFO:root:Epoch    91, Energy: -3.74090e+01 (-3.75122e+01), Variance: 8.89541e+01 (1.35729e+02), Accept ratio: 0.44622, 
+INFO:root:Epoch    92, Energy: -3.64904e+01 (-3.59100e+01), Variance: 1.52240e+02 (5.58184e+02), Accept ratio: 0.45107, 
+INFO:root:Epoch    93, Energy: -3.69276e+01 (-3.65035e+01), Variance: 2.78489e+02 (5.66683e+02), Accept ratio: 0.44779, 
+INFO:root:Epoch    94, Energy: -3.69976e+01 (-3.68295e+01), Variance: 3.11771e+02 (4.72868e+02), Accept ratio: 0.44194, 
+INFO:root:Epoch    95, Energy: -3.72695e+01 (-3.67276e+01), Variance: 5.52995e+02 (7.94341e+02), Accept ratio: 0.46523, 
+INFO:root:Epoch    96, Energy: -3.64127e+01 (-3.63787e+01), Variance: 5.92047e+02 (1.08367e+03), Accept ratio: 0.45168, 
+INFO:root:Epoch    97, Energy: -3.67374e+01 (-3.73275e+01), Variance: 1.67339e+03 (2.31766e+03), Accept ratio: 0.46489, 
+INFO:root:Epoch    98, Energy: -3.70547e+01 (-3.74685e+01), Variance: 4.79650e+03 (1.03392e+04), Accept ratio: 0.41646, 
+INFO:root:Epoch    99, Energy: -3.51322e+01 (-3.35835e+01), Variance: 1.40209e+04 (3.56005e+04), Accept ratio: 0.45156, 
+INFO:root:Epoch   100, Energy: -1.95026e+01 (-3.27149e+01), Variance: 5.78883e+04 (2.19469e+05), Accept ratio: 0.47968, , best weights saved
+INFO:root:Epoch   101, Energy: 3.22730e+01 (6.62284e+01), Variance: 1.02907e+06 (1.11262e+07), Accept ratio: 0.58189, 
+INFO:root:Epoch   102, Energy: 2.21246e+02 (8.75289e+01), Variance: 2.96645e+07 (5.87047e+08), Accept ratio: 0.41331, 
+INFO:root:Epoch   103, Energy: 1.35752e+03 (9.58939e+03), Variance: 1.86658e+08 (5.42111e+10), Accept ratio: 0.39742, 
+INFO:root:Epoch   104, Energy: nan (nan), Variance: nan (nan), Accept ratio: nan, , nans ckpt saved
+INFO:root:VMC terminated due to Nans! Aborting.
+[1;34mwandb[0m: 
+[1;34mwandb[0m: You can sync this run to the cloud by running:
+[1;34mwandb[0m: [1mwandb sync /global/scratch/users/ren27/wandb/wandb/offline-run-20260802_160455-97pmq02t[0m
+[1;34mwandb[0m: Find logs at: [1;35m../wandb/wandb/offline-run-20260802_160455-97pmq02t/logs[0m
