@@ -84,6 +84,14 @@ def initialize_spring(
         optimizer_config.damping,
         optimizer_config.mu,
     )
+    # Optional momentum schedule. Absent keys keep the constant-mu behavior, so
+    # configs written before this option existed still load.
+    mu_schedule = get_mu_schedule(
+        optimizer_config.mu,
+        optimizer_config.get("mu_init", 0.0),
+        int(optimizer_config.get("mu_warmup_steps", 0)),
+        int(optimizer_config.get("mu_ramp_steps", 0)),
+    )
 
     descent_optimizer = optax.sgd(
         learning_rate=learning_rate_schedule, momentum=0, nesterov=False
@@ -92,15 +100,27 @@ def initialize_spring(
     def prev_update(optimizer_state):
         return optimizer_state[0].trace
 
+    def step_count(optimizer_state):
+        # optax.sgd with a learning-rate SCHEDULE is chain(trace, scale_by_schedule),
+        # so the step counter lives in the second state element (same positional
+        # convention as prev_update reading [0].trace above).
+        return optimizer_state[1].count
+
     def optimizer_apply(energy, local_energies, params, optimizer_state, data):
         positions = get_position_fn(data)
 
         centered_local_energies = local_energies - energy
+        mu_t = (
+            mu_schedule(step_count(optimizer_state))
+            if mu_schedule is not None
+            else jnp.asarray(optimizer_config.mu, dtype=jnp.float32)
+        )
         grad = spring_step(
             centered_local_energies,
             params,
             prev_update(optimizer_state),
             positions,
+            mu_override=mu_t if mu_schedule is not None else None,
         )
 
         updates, optimizer_state = descent_optimizer.update(
@@ -112,6 +132,9 @@ def initialize_spring(
             optimizer_config.constrain_norm,
             optimizer_config.norm_constraint,
         )
+        # Log mu under the same key PRIME-SR and SS-SPRING use, so a fixed or
+        # scheduled SPRING can be overlaid directly against their adaptive values.
+        opt_metrics["mu"] = mu_t
         if optimizer_config.constrain_norm:
             updates = constrain_norm(
                 updates,
@@ -136,12 +159,59 @@ def initialize_spring(
     return update_param_fn, optimizer_state
 
 
+def get_mu_schedule(
+    mu: chex.Scalar,
+    mu_init: chex.Scalar = 0.0,
+    warmup_steps: int = 0,
+    ramp_steps: int = 0,
+):
+    """Build a step -> mu schedule, or None when mu is constant.
+
+    Returning None for the constant case keeps the original code path exactly, so
+    default-configured runs are bit-identical to before this option existed.
+
+    The shape mirrors what `same_sampled_spring_unified` produces on its own: its
+    adaptive beta is pinned at its initial value until the probe's residual buffer
+    fills (2 * lb_window steps, i.e. 60 by default) and then jumps almost straight
+    to its converged value. So the interesting knob is a DELAYED ONSET, not a
+    gradual rise, and `ramp_steps=0` (a step function) is the faithful default.
+    `ramp_steps > 0` linearly interpolates instead, to separate "delay" from
+    "gradual increase" if that turns out to matter.
+
+    Args:
+        mu: the final momentum.
+        mu_init: momentum held during warmup (0 = no momentum, matching SS-SPRING).
+        warmup_steps: steps to hold `mu_init` before engaging.
+        ramp_steps: length of the linear rise after warmup; 0 = instant step.
+
+    Returns:
+        A callable step -> mu, or None if the schedule is constant.
+    """
+    if warmup_steps <= 0 and ramp_steps <= 0:
+        return None
+
+    def mu_at(step: Array) -> Array:
+        t = jnp.asarray(step, dtype=jnp.float32)
+        if ramp_steps > 0:
+            frac = jnp.clip((t - warmup_steps) / float(ramp_steps), 0.0, 1.0)
+        else:
+            frac = jnp.where(t >= warmup_steps, 1.0, 0.0)
+        return mu_init + (mu - mu_init) * frac
+
+    return mu_at
+
+
 def get_spring_step(
     log_psi_apply: ModelApply[P],
     damping: chex.Scalar = 0.001,
     mu: chex.Scalar = 0.99,
 ):
-    """Get the SPRING update function."""
+    """Get the SPRING update function.
+
+    The returned step accepts an optional `mu_override`, a traced scalar that
+    replaces the fixed `mu` for that step. This is what lets a momentum schedule
+    drive the update without duplicating the solve.
+    """
     kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
 
     def spring_step(
@@ -149,9 +219,11 @@ def get_spring_step(
         params: P,
         prev_grad,
         positions: Array,
+        mu_override=None,
     ) -> Tuple[Array, P]:
         nchains = positions.shape[0]
-        mu_prev = jax.tree_map(lambda x: mu * x, prev_grad)
+        mu_t = mu if mu_override is None else mu_override
+        mu_prev = jax.tree_map(lambda x: mu_t * x, prev_grad)
         ones = jnp.ones((nchains, 1))
 
         # Calculate T = Ohat @ Ohat^T using neural-tangents

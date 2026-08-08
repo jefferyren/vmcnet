@@ -277,6 +277,16 @@ def get_default_vmc_config() -> Dict:
                 "learning_decay_rate": 1e-4,
                 # SPRING hyperparams
                 "mu": 0.99,
+                # Optional momentum schedule; the defaults below reproduce a
+                # constant mu exactly. mu_init is held for mu_warmup_steps, then
+                # mu_ramp_steps linearly rises to mu (0 = instant step). This
+                # exists to ablate the delayed-onset momentum that
+                # same_sampled_spring_unified produces for free: its adaptive beta
+                # is pinned at its initial value until the probe residual buffer
+                # fills (2 * lb_window steps) and then jumps to its converged value.
+                "mu_init": 0.0,
+                "mu_warmup_steps": 0,
+                "mu_ramp_steps": 0,
                 "damping": 0.001,
                 "constrain_norm": True,
                 "norm_constraint": 0.001,
