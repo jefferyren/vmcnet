@@ -35,10 +35,19 @@ todo=()
 for d in "${DIRS[@]}"; do
   [[ -e "$d/.synced" ]] && continue
   if [[ -n "$FILTER" ]]; then
-    # match against the run name recorded in the directory's metadata
-    name=$(grep -ho '"name": *"[^"]*"' "$d"/files/wandb-metadata.json 2>/dev/null \
-           | head -1 | cut -d'"' -f4 || true)
-    [[ "$d$name" == *"$FILTER"* ]] || continue
+    # Match the directory name, the recorded run name, or the config. FAIL OPEN:
+    # if none of those files are readable we sync anyway. An earlier version
+    # matched only wandb-metadata.json, which is often absent — that silently
+    # skipped 23 of 24 runs and looked like a successful sync.
+    hay="$d"
+    for f in "$d"/files/wandb-metadata.json "$d"/files/config.yaml; do
+      [[ -r "$f" ]] && hay+=$(tr -d '\n' < "$f")
+    done
+    if [[ "$hay" == "$d" ]]; then
+      echo "  (no metadata in $(basename "$d"); syncing it rather than risk skipping)"
+    elif [[ "$hay" != *"$FILTER"* ]]; then
+      continue
+    fi
   fi
   todo+=("$d")
 done
