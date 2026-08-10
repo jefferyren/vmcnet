@@ -1,0 +1,34 @@
+{
+    "notes": "O atom (3P ground state), settings mirroring carbon.json / the SPRING paper. Benchmark -75.0673 Ha (Chakravorty 1993 Table XI).",
+    "subfolder_name": "O",
+    "problem": {
+        "ion_pos": [
+            [
+                0.0,
+                0.0,
+                0.0
+            ]
+        ],
+        "ion_charges": [
+            8.0
+        ],
+        "nelec": [
+            5,
+            3
+        ]
+    },
+    "vmc": {
+        "nchains": 1000,
+        "nepochs": 100000,
+        "nburn": 5000,
+        "nsteps_per_param_update": 10,
+        "clip_threshold": 5.0,
+        "clip_center": "mean"
+    },
+    "eval": {
+        "nchains": 2000,
+        "nburn": 5000,
+        "nepochs": 20000,
+        "nsteps_per_param_update": 10
+    }
+}
