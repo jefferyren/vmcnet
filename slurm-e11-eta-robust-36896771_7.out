@@ -1,0 +1,32 @@
+2026-08-10 17:56:28.766732: E external/xla/xla/stream_executor/cuda/cuda_driver.cc:152] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+Traceback (most recent call last):
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jax/_src/xla_bridge.py", line 885, in backends
+    backend = _init_backend(platform)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jax/_src/xla_bridge.py", line 971, in _init_backend
+    backend = registration.factory()
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jax/_src/xla_bridge.py", line 671, in factory
+    return xla_client.make_c_api_client(plugin_name, updated_options, None)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jaxlib/xla_client.py", line 200, in make_c_api_client
+    return _xla.get_c_api_client(plugin_name, options, distributed_client)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jaxlib.xla_extension.XlaRuntimeError: FAILED_PRECONDITION: No visible GPU devices.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jax/_src/xla_bridge.py", line 1083, in devices
+    return get_backend(backend).devices()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jax/_src/xla_bridge.py", line 1017, in get_backend
+    return _get_backend_uncached(platform)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jax/_src/xla_bridge.py", line 996, in _get_backend_uncached
+    bs = backends()
+         ^^^^^^^^^^
+  File "/global/scratch/users/ren27/envs/vmcnet/lib/python3.12/site-packages/jax/_src/xla_bridge.py", line 901, in backends
+    raise RuntimeError(err_msg)
+RuntimeError: Unable to initialize backend 'cuda': FAILED_PRECONDITION: No visible GPU devices. (you may need to uninstall the failing plugin package, or set JAX_PLATFORMS=cpu to skip this backend.)
