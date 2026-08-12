@@ -16,7 +16,7 @@ raise against those numbers, in descending order of how cheaply they can be clos
 |---|--------|------|------|--------------------|
 | 1 | `slurm/e9_atoms_headtohead.sbatch` | 50 × ~4–5h | ~225 GPU-h | "only two systems" |
 | 2 | `slurm/e11_eta_robustness_carbon.sbatch` | 24 × ~4h | ~96 GPU-h | "only one learning rate" |
-| 3 | `slurm/e10_molecules_hometurf.sbatch` | 24 × ~10–14h | ~250–330 GPU-h | "you avoided PRIME-SR's systems" |
+| 3 | `slurm/e10_molecules_hometurf.sbatch` | 36 × ~10–14h | ~360–500 GPU-h | "you avoided PRIME-SR's systems" |
 
 **Recommended order: E9 and E11 together, E10 only afterwards.** E9 and E11 are
 independent and together cost about what E7 did. E10 costs more than everything else
@@ -63,17 +63,35 @@ Claim B's remaining exposure. The PRIME-SR paper's headline electronic result is
 seed-robustness on exactly these two systems, so testing there — **at their settings**
 — is what makes the claim defensible rather than convenient.
 
-Deliberately handicapped to their configuration: **eta = 0.002** (the tuned molecular
-value in both papers, not the 0.02 used elsewhere here) and fixed mu ∈ {0.9, 0.95},
-their reported grid. mu = 0.99 is excluded because they report it unstable on N2/CO
-and we have no data of our own there. 3 seeds, not 5, purely for cost.
+Deliberately handicapped to their configuration: **eta = 0.002**, the tuned molecular
+value in both papers, not the 0.02 used elsewhere here. 3 seeds, not 5, purely for cost.
 
-Watch the `mu` trace: SS-SPRING's beta converges near 0.99, so if it is stable on N2
-where fixed mu = 0.99 reportedly is not, that is a result in its own right.
+**REVISED 2026-08-11 after E11 — the arm grid changed from 4 to 6.** The original design
+used only their grid, mu ∈ {0.9, 0.95}, excluding 0.99 as they report it unstable here.
+E11 makes that unusable. At eta = 0.002 the norm cap essentially never binds (it bound on
+only 1.6–4.3% of steps at eta = 0.005 on carbon), and in the uncapped regime E11 showed
+the outcome tracks the accumulated step `eta/(1−mu)`:
 
-**Run N2 first** (12 runs, half the cost):
-`sbatch --array=0-2,6-8,12-14,18-20 slurm/e10_molecules_hometurf.sbatch`
-then CO with `--array=3-5,9-11,15-17,21-23`.
+| arm | mu | eta/(1−mu) |
+|---|---|---|
+| SPRING mu=0.9 | 0.90 | 0.020 |
+| SPRING mu=0.95 | 0.95 | 0.040 |
+| PRIME-SR | ~0.953 | 0.043 |
+| **SS-SPRING** | **~0.995** | **0.400** |
+
+SS-SPRING would win on a ~10× larger effective step, for reasons having nothing to do
+with adaptivity — an uninterpretable result, and one a referee reading E10 next to E11
+would catch at once. Two arms were added: **mu = 0.99** (a fair tuned baseline) and
+**mu = 0.995** (the matched-constant control, SS-SPRING's own converged beta held fixed —
+cf. E8, which ran this control on carbon and H4). Array indices 0–23 are unchanged.
+
+Watch the `mu` trace and `check_for_nans`: if the high-mu arms really are unstable on
+N2/CO while SS-SPRING at beta ≈ 0.995 is not, that is a strong result in its own right,
+and it is the outcome that would most support the campaign.
+
+**Run N2 first** (18 runs, half the cost):
+`sbatch --array=0-2,6-8,12-14,18-20,24-26,30-32 slurm/e10_molecules_hometurf.sbatch`
+then CO with `--array=3-5,9-11,15-17,21-23,27-29,33-35`.
 
 The ~10–14h/run estimate extrapolates from a single 200-epoch smoke test that put N2
 at roughly 3× carbon per step. Re-time after the first run finishes rather than
