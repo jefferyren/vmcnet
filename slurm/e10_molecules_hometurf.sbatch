@@ -41,6 +41,16 @@
 # If mu=0.99/0.995 really are unstable on N2/CO while SS-SPRING at beta~0.995 is not,
 # THAT is a strong result in its own right -- watch the mu trace and check_for_nans.
 #
+# *** eval.nchains WAS LOWERED 2000 -> 1000 ON 2026-08-13. DO NOT PUT IT BACK. ***
+# The first E10 submission finished 50k training on 34 of 36 runs and then EVERY ONE of
+# them died entering eval with RESOURCE_EXHAUSTED (~7.94 GiB). The presets set
+# eval.nchains=2000 against vmc.nchains=1000, so eval doubles the walker count; at 14
+# electrons and 16 determinants that does not fit an 11 GB GTX2080TI. Carbon (6
+# electrons) did fit, which is why E7/E9/E11 never hit it. Eval energy is an unbiased
+# mean either way -- walker count sets the error bar, not the expectation -- so 1000 is
+# comparable to the 2000 used on the atoms, just slightly noisier.
+# Recovering the first submission's lost eval phase: slurm/e10_eval_recovery.sbatch.
+#
 # COST WARNING. N2 and CO are 14-electron systems; the only measurement we have is a
 # 200-epoch smoke test, which put N2 at roughly 3x carbon per step. At 50k + 20k eval
 # that extrapolates to ~10-14h per run, so ~360-500 GPU-h for all 36 -- more than every
@@ -134,7 +144,7 @@ vmc-molecule \
   --config.vmc.nepochs=50000 \
   --config.vmc.checkpoint_every=10000 \
   --config.vmc.check_for_nans=True \
-  --config.eval.nchains=2000 \
+  --config.eval.nchains=1000 \
   --config.eval.nburn=10000 \
   --config.eval.nepochs=20000 \
   --config.initial_seed="$SEED" \

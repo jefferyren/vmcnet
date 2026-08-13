@@ -1,27 +1,26 @@
 # Campaign log — SS-SPRING vs SPRING vs PRIME-SR
 
 **Handoff document.** Read this first in a new session; it is self-contained. Last
-updated 2026-08-11, after E9 and E11 completed. 253 runs, ~700 GPU-hours, all on Savio
+updated 2026-08-13, after E10 completed Phase C. 289 runs, ~1000 GPU-hours, all on Savio
 GTX2080TIs.
 
-> **Current state (2026-08-11): E9 and E11 are complete (74/74) and THE TWO CLAIMS HAVE
-> COME APART.**
+> **Current state (2026-08-13): Phase C is COMPLETE (E9, E10, E11 — 110 runs).**
 >
-> - **Claim B (SS-SPRING ≥ PRIME-SR) is now the strong result.** Tested on four systems
->   and three learning rates, it has **never lost**: +12.5σ on carbon at eta=0.005, ~7σ
->   on carbon at 0.02, 3.9σ on N, 3.4σ on H4; ties on O and on carbon at eta=0.05.
-> - **Claim A (untuned SS-SPRING matches tuned SPRING) does NOT generalise.** It holds on
->   carbon, H4, N and carbon at eta=0.005, but fails on **oxygen** (0.178 ± 0.066 mHa
->   behind SPRING(0.99), losing 5/5 seeds) and on **carbon at eta=0.05** (0.037 ± 0.010,
->   losing 3/3). Across the four Phase C conditions, leaving SPRING at its published
->   default of 0.99 beats SS-SPRING by ~4× in mean regret. Do not state Claim A as a
->   general property.
-> - **New: PRIME-SR breaks at small eta** — 2.7× worse than every other arm at
->   eta=0.005, swing 0.242 mHa across eta vs 0.030–0.054 for everything else. This is the
->   clean PRIME-SR failure the campaign set out to find (§1), and it is mechanistically
->   explained (§4 item 8).
+> - **Claim B (SS-SPRING ≥ PRIME-SR) is the result.** Six systems, three learning rates,
+>   **never lost**: 22σ on CO, 15σ on N2-eq, 12.5σ on carbon at eta=0.005, 3.9σ on N,
+>   3.4σ on H4, ~7σ on carbon at 0.02; ties on O and carbon at eta=0.05. E10 won it on
+>   PRIME-SR's *own* systems at its *own* settings. **This is the paper's headline.**
+> - **Claim A (untuned == tuned SPRING) does NOT generalise.** Holds on carbon, H4, N, CO
+>   and N2-eq (where SS-SPRING is ahead); **fails on oxygen** (0/5 seeds) and **carbon at
+>   eta=0.05** (0/3). Leaving SPRING at its published 0.99 beats SS-SPRING ~4x on mean
+>   regret over the E9/E11 conditions. Scope it; do not assert it generally.
+> - **PRIME-SR breaks at small eta** (§4 item 8) — the clean failure this campaign was
+>   built to find, now confirmed twice: 2.7x worse at eta=0.005 on carbon (E11) and
+>   3.1–3.5 mHa behind on N2/CO at eta=0.002 (E10).
 >
-> **Next action: E10**, reframed as a Claim B test — see §5.
+> **⚠ E10's eval phase OOM'd on all 34 completed runs, so its numbers are TRAINING TAILS,
+> not eval energies, and nothing there is converged at 50k.** Recovering them is the next
+> action and is cheap (~40–70 GPU-h from existing checkpoints) — see §5, Phase C.
 
 ---
 
@@ -33,10 +32,11 @@ Two claims about **same-sampled SPRING (SS-SPRING)**, our adaptive-momentum vari
 - **Claim B** — it matches or beats **PRIME-SR** (Wang & Liu, arXiv:2604.18357), the
   competing adaptive-momentum SR method.
 
-**Status after Phase C (E9, E11): the claims have separated.** Claim B holds everywhere
-tested — four systems, three learning rates, never once lost. **Claim A does not
-generalise**: it holds on carbon, H4, N and carbon at eta=0.005, and fails on oxygen
-(0/5 seeds) and carbon at eta=0.05 (0/3). See the table in §3 and the detail in §5.
+**Status after Phase C (E9, E10, E11): the claims have separated.** Claim B holds
+everywhere tested — **six systems, three learning rates, never once lost**, including on
+PRIME-SR's own N2-eq and CO at PRIME-SR's own settings. **Claim A does not generalise**:
+it holds on carbon, H4, N, CO and N2-eq, and fails on oxygen (0/5 seeds) and carbon at
+eta=0.05 (0/3). See the table in §3 and the detail in §5.
 
 A third result arrived unlooked-for and is arguably the most publishable: **PRIME-SR
 fails badly at small learning rate** (§4 item 8) — the clean PRIME-SR breakage this
@@ -55,11 +55,11 @@ All three are stochastic-reconfiguration optimizers for neural-network VMC that 
 
 Implementations: `vmcnet/updates/{spring,prime_sr,same_sampled_spring_unified}.py`.
 
-## 3. Headline result (E7, as qualified by E9/E11)
+## 3. Headline result (E7, as qualified by E9/E10/E11)
 
 > **Read §5 Phase C before quoting anything here.** E7's two-system tie is real but does
-> **not** generalise: across six conditions Claim B never loses, while Claim A fails on
-> oxygen (5/5 seeds) and on carbon at eta=0.05 (3/3). The summary across everything
+> **not** generalise: across eight conditions Claim B never loses, while Claim A fails on
+> oxygen (0/5 seeds) and on carbon at eta=0.05 (0/3). The summary across everything
 > measured:
 >
 > | condition | Claim A (ties best fixed mu) | Claim B (≥ PRIME-SR) |
@@ -70,6 +70,11 @@ Implementations: `vmcnet/updates/{spring,prime_sr,same_sampled_spring_unified}.p
 > | **O, eta=0.02 (E9)** | ❌ **+0.178 ± 0.066, 0/5 seeds** | ⚪ tie |
 > | carbon, eta=0.005 (E11) | ✅ tie (+0.009 ± 0.028) | ✅ **+12.5σ** |
 > | **carbon, eta=0.05 (E11)** | ❌ **+0.037 ± 0.010, 0/3 seeds** | ⚪ tie |
+> | N2-eq, eta=0.002 (E10) † | ✅ **exceeded** (−0.389 ± 0.095) | ✅ **+15.1σ** |
+> | CO, eta=0.002 (E10) † | ✅ tie (+0.003 ± 0.228) | ✅ **+22.0σ** |
+>
+> † E10 rows are **training tails, not eval energies** (its eval phase OOM'd), and
+> nothing there is converged at 50k. Directionally strong, formally provisional.
 >
 > **Claim B is the paper's defensible headline. Claim A must be scoped, not asserted.**
 
@@ -144,6 +149,12 @@ and re-proposing them wastes GPU-hours.
    by 50k. The measured ordering follows that ratio. (The scaling is an interpretation
    consistent with the ordering, not a measurement.) The PRIME-SR paper advertises
    seed-robustness and reports **no eta study**.
+   **Confirmed again by E10 (2026-08-13)** on PRIME-SR's own N2-eq and CO at its own
+   eta = 0.002: it lands 3.5 and 3.1 mHa behind SS-SPRING (15σ, 22σ), and across the six
+   arms there the correlation of log₁₀(eta/(1−mu)) with final error is r = −0.92 / −0.90.
+   The arm ordering is the momentum ordering. Its momentum settles at ~0.953 — between
+   the two values its own paper recommends — which is precisely the wrong place to be at
+   a small learning rate.
 
 **Still unexplained:** SS-SPRING beats SPRING(0.99) on carbon by ~0.10 mHa at ~2σ, and
 it is neither the warm-up (E6) nor the converged constant (E8). What remains is beta's
@@ -175,15 +186,71 @@ superseded them.
 | **E7** | 4 arms × 2 systems × **5 seeds**, 50k + eval | **both claims supported** (§3); E0's tuning overturned | [E7](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-b/reports/Plots-E7-seeded-head-to-head-main-result--VmlldzoxNzcwMTkyNw) |
 | **E8** | SPRING pinned at SS-SPRING's converged beta | matched constant **does not** reproduce SS-SPRING | [E8](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-b/reports/Plots-E8-matched-constant-control--VmlldzoxNzcwMTkyOA) |
 
-### Phase C — E9 and E11 COMPLETE (74 runs, ~300 GPU-h); E10 outstanding
+### Phase C — COMPLETE: E9, E10, E11 (110 runs, ~600 GPU-h)
 
-Closed two of the three referee objections to E7. Project `vmcnet-phase-c`.
+Closed all three referee objections to E7. Project `vmcnet-phase-c`.
 
 | # | Script | Runs | Result | Report |
 |---|---|---|---|---|
-| **E9** | `e9_atoms_headtohead.sbatch` | 50/50 | Claim B holds (N +3.9σ, O tie); **Claim A fails on O**, 5/5 seeds | [E9](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-c/reports/Plots-%E2%80%94-E9-N-and-O-atoms-%28generality%29--VmlldzoxNzcwOTQ1OA) |
+| **E9** | `e9_atoms_headtohead.sbatch` | 50/50 | Claim B holds (N +3.9σ, O tie); **Claim A fails on O**, 0/5 seeds | [E9](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-c/reports/Plots-%E2%80%94-E9-N-and-O-atoms-%28generality%29--VmlldzoxNzcwOTQ1OA) |
 | **E11** | `e11_eta_robustness_carbon.sbatch` | 24/24 | **PRIME-SR collapses at eta=0.005** (+12.5σ); Claim A fails at eta=0.05 | [E11](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-c/reports/Plots-%E2%80%94-E11-learning-rate-robustness-%28carbon%29--VmlldzoxNzcwOTQ2NA) |
-| **E10** | `e10_molecules_hometurf.sbatch` | not submitted | ~250-330 GPU-h | **next action** — reframe as a Claim B test, see below |
+| **E10** | `e10_molecules_hometurf.sbatch` | 34/36 trained, **0 eval** | **Claim B's best result**: +15σ N2, +22σ CO on PRIME-SR's home turf. Provisional — training tails only | [E10](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-c/reports/Plots-%E2%80%94-E10-N2-eq-and-CO-%28PRIME-SR-home-turf%29-%E2%80%94-PROVISIONAL%2C-no-eval-phase--VmlldzoxNzcyNTE3Mg) |
+
+#### E10 — N2-eq and CO, PRIME-SR's home turf (eta = 0.002)
+
+**Training-tail mHa above reference (NOT eval energies — see the warning below):**
+
+| arm | mu | eta/(1−mu) | N2-eq | CO |
+|---|---|---|---|---|
+| SPRING mu=0.9 | 0.90 | 0.020 | 20.289 ± 0.140 | 18.431 ± 0.917 |
+| SPRING mu=0.95 | 0.95 | 0.040 | 15.546 ± 0.212 | 12.973 ± 0.188 |
+| PRIME-SR | ~0.953 | 0.043 | 14.569 ± 0.226 | 12.296 ± 0.054 |
+| SPRING mu=0.99 | 0.99 | 0.200 | 12.122 ± 0.211 | 9.195 ± 0.181 |
+| SPRING mu=0.995 | 0.995 | 0.400 | 11.460 ± 0.086 | **9.175 ± 0.082** |
+| **SS-SPRING** | ~0.995 | 0.400 | **11.062 ± 0.010** | 9.178 ± 0.194 |
+
+- **Claim B, decisively**: SS-SPRING beats PRIME-SR by **3.507 ± 0.232 mHa (15.1σ)** on
+  N2 and **3.118 ± 0.141 (22.0σ)** on CO, winning 3/3 seeds on both.
+- **Claim A**: *exceeded* on N2 (SS-SPRING ahead of the best fixed mu by 0.389 ± 0.095,
+  4.1σ, and the tightest arm across seeds); clean tie on CO (top three within 0.02 mHa).
+- **The added arms were what made this interpretable.** Against the paper's own grid
+  alone (mu ≤ 0.95), SS-SPRING would have "beaten tuned SPRING" by 4.5 mHa on N2 and 3.8
+  on CO — almost entirely an artifact of comparing mu≈0.995 against mu≤0.95 at a learning
+  rate where momentum dominates. See §4 item 8.
+- **E11's mechanism reproduces**: correlation of log₁₀(eta/(1−mu)) with final error across
+  the six arms is **r = −0.92 (N2), −0.90 (CO)**. The arm ordering is the momentum ordering.
+- **Contradicts the PRIME-SR paper on one point**: mu = 0.99 and 0.995 ran stably on both
+  systems for every seed. Their reported instability at 0.99 here did not reproduce.
+
+**⚠ TWO PROBLEMS — E10 is provisional.**
+
+1. **No eval energies exist.** All 34 runs that finished training then OOM'd entering
+   eval: `eval.nchains=2000` doubles the walker count, and 14 electrons × 16 determinants
+   at 2000 walkers does not fit an 11 GB GTX2080TI (carbon at 6 electrons did). Every
+   number above is a training tail and is **not comparable** to E7/E9/E11's eval numbers.
+2. **Nothing is converged at 50k.** Every arm still improves by 0.1–1.0 mHa per 5k epochs
+   at the end; absolute errors are 9–20 mHa vs 0.2–0.8 on the atoms. E10 compares arms at
+   a **fixed budget**, not at convergence. PRIME-SR is still falling at −0.37 mHa/5k on
+   N2, so state the result as equal-budget, not asymptotic.
+
+Also: 2 of 36 runs stopped abruptly near epoch 1200 with no NaN, traceback or error
+(`e10_N2_eq_spring_mu0.995_s2`, `e10_CO_spring_mu0.9_s0`) — external kills, not
+divergence. Those cells have n=2. Rerun with
+`sbatch --exclude=n0135.savio3 --array=3,32 slurm/e10_molecules_hometurf.sbatch`.
+
+**RECOVERING THE EVAL ENERGIES — the next action, ~40–70 GPU-h not ~250.** The 50k
+training is done and checkpointed (`checkpoint_every=10000` → `logdir/checkpoints/50000.npz`).
+Re-run eval alone from those checkpoints:
+
+- **Reload `checkpoints/50000.npz`, NOT `best_checkpoint.npz`.** The reload default is the
+  "best" file, selected on best error-adjusted *running average* energy — a best-of-training
+  pick that lands at a different epoch per arm and would bias the comparison.
+- **Set `--config.eval.nchains=1000`** (training ran fine at 1000; >~1500 will OOM again).
+- **Set `--config.vmc.nepochs=0`** so the reloaded run goes straight to eval.
+- Re-time one run first; expect ~1–2 h each for 10k burn + 20k eval epochs.
+
+Then `python slurm/parse_eval_energies.py --experiment E10 --backfill` and rewrite the
+report — the tool picks up eval energies automatically and replaces every tail number.
 
 **E9 — N and O atoms** (mHa above reference, 5 seeds, paired deltas):
 
@@ -363,25 +430,33 @@ than measured — they are just as expensive to rediscover.
 ## 10. If you are picking this up cold
 
 1. Read §3 (the qualified headline) and §4 (ideas already ruled out). The single most
-   important fact: **Claim B survived everything; Claim A did not generalise.**
-2. **Next action is E10**, reframed as a Claim B test on PRIME-SR's home turf — see §5.
-   Run N2 first. Keep `--exclude=n0135.savio3` until BRC drains that node. E10 runs at
-   eta = 0.002, deep in the uncapped regime where E11 found PRIME-SR worst by 2.7×, so
-   the prediction is that PRIME-SR does badly there. Do *not* expect tuned SPRING to lose.
-3. Optional but honest: add **mu = 0.999** to E9's grid. On N the ordering is monotone in
-   mu, so the optimum sits at the grid edge and N's tuned baseline is understated —
-   Claim A's tie on N would likely narrow against 0.999. Index-compatible: append
-   `case 5)` and submit `--array=50-59` (10 runs, ~45 GPU-h). It cuts against our own
-   claim, which is the reason to run it.
-4. After any run finishes: `bash slurm/sync_wandb.sh` **unfiltered** on a login node, pull
-   the `.out` files, then `python slurm/parse_eval_energies.py --experiment E9 E11
-   --backfill`. That tool globs across job ids, prints coverage, emits the exact resubmit
-   command for anything missing, and flags duplicate or unsynced runs. Then update the
-   reports with the `wandb-experiment-report` skill.
-5. **Do not** re-propose: the small-N hypothesis, the warm-up mechanism, the
+   important fact: **Claim B survived everything across six systems; Claim A did not
+   generalise.** Lead any write-up with Claim B.
+2. **Next action: recover E10's eval energies.** All 34 completed E10 runs OOM'd entering
+   eval, so E10's numbers are training tails. The training is done and checkpointed, so
+   this is ~40–70 GPU-h, not a redo — reload `checkpoints/50000.npz` (NOT
+   `best_checkpoint.npz`), set `--config.eval.nchains=1000` and `--config.vmc.nepochs=0`.
+   Full detail in §5, Phase C. Also rerun the two killed cells:
+   `sbatch --exclude=n0135.savio3 --array=3,32 slurm/e10_molecules_hometurf.sbatch`.
+3. **Fix the preset before any future big-system run.** `eval.nchains=2000` against
+   `vmc.nchains=1000` is what caused the OOM; it is fine at 6 electrons and fatal at 14.
+   Either drop `eval.nchains` to 1000 in `preset_configs/{N2_eq,CO}.json` or request a
+   larger GPU. This will bite again on any system of N2's size or above.
+4. Optional but honest: add **mu = 0.999** to E9's grid. On N the ordering is monotone in
+   mu, so the optimum sits at the grid edge and N's tuned baseline is understated.
+   Index-compatible: append `case 5)` and submit `--array=50-59` (10 runs, ~45 GPU-h).
+5. After any run finishes: `bash slurm/sync_wandb.sh` **unfiltered** on a login node, pull
+   the `.out` files, then `python slurm/parse_eval_energies.py --experiment E9 E10 E11
+   --backfill`. The tool globs job ids, distinguishes "training finished, eval OOM'd"
+   (salvageable) from "needs a rerun", emits the exact resubmit array, and flags duplicate
+   or unsynced runs. Then update the reports with the `wandb-experiment-report` skill.
+6. **Do not** re-propose: the small-N hypothesis, the warm-up mechanism, the
    matched-constant explanation, or an eta sweep *as a step-size study on short runs*.
-   All settled — see §4. (An eta study on 50k runs was worth it; see §4 item 7.)
-6. **Do not** overstate Claim A. "Untuned SS-SPRING matches tuned SPRING" is false as a
-   general statement: it loses to SPRING(0.99) on oxygen on 5/5 seeds and on carbon at
-   eta=0.05 on 3/3, and plain SPRING at its published default beats it ~4× on mean regret
-   across the four Phase C conditions. Scope it or lead with Claim B.
+   All settled — see §4.
+7. **Do not** overstate Claim A, and **do not** quote E10's numbers as final. Claim A
+   fails on oxygen (0/5 seeds) and carbon at eta=0.05 (0/3); plain SPRING at 0.99 beats
+   SS-SPRING ~4× on mean regret across the E9/E11 conditions. E10's numbers are training
+   tails from un-converged runs — strong directionally, provisional formally.
+8. **Never compare arms at small eta without a high-momentum fixed baseline.** E10's
+   original grid (mu ≤ 0.95) would have produced a 4.5 mHa "win" that was pure
+   `eta/(1−mu)` artifact. §4 item 8 is the general statement of this trap.
