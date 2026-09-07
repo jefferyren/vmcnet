@@ -291,6 +291,23 @@ def get_default_vmc_config() -> Dict:
                 "constrain_norm": True,
                 "norm_constraint": 0.001,
             },
+            "minsr_momentum": {
+                # Learning rate settings. The SPRING paper tunes eta per method and
+                # per system class: MinSR uses 0.1 on the atoms and 0.02 on the
+                # molecules, MinSR+M 0.2 and 0.02 (Sections 4.1-4.2). Always set it
+                # explicitly per run; this default is only the atom MinSR+M value.
+                "schedule_type": "inverse_time",  # constant or inverse_time
+                "learning_rate": 2e-1,
+                "learning_decay_rate": 1e-4,
+                # mu = 0.9 is the paper's MinSR+M value; mu = 0.0 makes this plain
+                # MinSR, so both baseline columns come from this one optimizer.
+                # Unlike SPRING's mu, this one must stay strictly below 1: the fresh
+                # solve enters scaled by (1 - mu).
+                "mu": 0.9,
+                "damping": 0.001,
+                "constrain_norm": True,
+                "norm_constraint": 0.001,
+            },
             "gauss_newton": {
                 # Learning rate settings
                 "schedule_type": "inverse_time",  # constant or inverse_time

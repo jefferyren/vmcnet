@@ -58,7 +58,12 @@ OOM = "RESOURCE_EXHAUSTED"
 # Reference energies (Ha). Carbon: Chakravorty 1993. N/O: preset_configs/
 # reference_energies.json. H4 has no literature benchmark -- compare arms only.
 REFERENCES = {"N": -54.5892, "O": -75.0673, "carbon": -37.8450,
-              "N2_eq": -109.5423, "CO": -113.3255}
+              "N2_eq": -109.5423, "CO": -113.3255,
+              # Le Roy MLR4(6,8) spectroscopic potential via the SPRING paper. Unlike
+              # the others this is not a clamped-nuclei electronic calculation, so it
+              # carries mHa-level adiabatic/relativistic content -- fine for ranking
+              # arms, flag the source when quoting an absolute error.
+              "N2_4.0": -109.2021}
 
 
 def reference_for(system):
@@ -112,10 +117,14 @@ METHOD = {
     "spring_mu0.999": "SPRING",
     "prime_sr": "PRIME-SR",
     "ssu_defaults": "SS-SPRING",
+    # Phase E baselines. Both come from the minsr_momentum optimizer; mu is what
+    # separates them, so they are two arms rather than two methods in the code.
+    "minsr": "MinSR",
+    "minsr_m": "MinSR+M",
 }
 MU_NOMINAL = {"spring_mu0.9": 0.9, "spring_mu0.95": 0.95, "spring_mu0.99": 0.99,
               "spring_mu0.995": 0.995, "spring_mu0.999": 0.999,
-              "spring_default": 0.99}
+              "spring_default": 0.99, "minsr": 0.0, "minsr_m": 0.9}
 # "spring_tuned" is deliberately absent: its mu depends on the system, so the E7/D7 cell
 # functions put x_mu_nominal straight into the row and backfill prefers that.
 
@@ -187,6 +196,39 @@ def _d11_cell(idx):
         x_experiment="D11", x_system="carbon", x_arm=arm, x_seed=seed, x_eta=float(eta))
 
 
+# Phase E -- the two baseline columns the campaign never ran, plus the one system the
+# SPRING paper's Table 1 has and this campaign does not. All at the Phase D 100k
+# protocol. eta is per ARM here, not per experiment: the SPRING paper tunes each method
+# separately (MinSR 0.1 / MinSR+M 0.2 on atoms, both 0.02 on molecules), so the cell
+# functions below carry it rather than the registry.
+E12_ARMS, E12_ETAS = ["minsr", "minsr_m"], {"minsr": 0.1, "minsr_m": 0.2}
+E12_SYSTEMS = ["carbon", "N", "O"]
+E13_ARMS, E13_SYSTEMS = ["minsr", "minsr_m"], ["N2_eq", "N2_4.0", "CO"]
+E14_ARMS = ["spring_mu0.99", "prime_sr", "ssu_defaults"]
+
+
+def _e12_cell(idx):
+    """Array index -> cell, mirroring e12_baselines_atoms_100k.sbatch exactly."""
+    arm, system, seed = E12_ARMS[idx // 15], E12_SYSTEMS[(idx % 15) // 5], idx % 5
+    return f"e12_{system}_{arm}_s{seed}", dict(
+        x_experiment="E12", x_system=system, x_arm=arm, x_seed=seed,
+        x_eta=E12_ETAS[arm])
+
+
+def _e13_cell(idx):
+    """Array index -> cell, mirroring e13_baselines_molecules_100k.sbatch exactly."""
+    arm, system, seed = E13_ARMS[idx // 9], E13_SYSTEMS[(idx % 9) // 3], idx % 3
+    return f"e13_{system}_{arm}_s{seed}", dict(
+        x_experiment="E13", x_system=system, x_arm=arm, x_seed=seed, x_eta=0.02)
+
+
+def _e14_cell(idx):
+    """Array index -> cell, mirroring e14_n2_stretched_100k.sbatch exactly."""
+    arm, seed = E14_ARMS[idx // 3], idx % 3
+    return f"e14_N2_4.0_{arm}_s{seed}", dict(
+        x_experiment="E14", x_system="N2_4.0", x_arm=arm, x_seed=seed, x_eta=0.002)
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -213,6 +255,15 @@ EXPERIMENTS = {
                 nepochs=100000, group_by="eta", project="vmcnet-phase-d"),
     "D10": dict(pattern="slurm-d10-hometurf-*_{idx}.out", ntasks=42, cell=_d10_cell,
                 nepochs=100000, group_by="system", project="vmcnet-phase-d"),
+    "E12": dict(pattern="slurm-e12-baselines-atoms-*_{idx}.out", ntasks=30,
+                cell=_e12_cell, nepochs=100000, group_by="system",
+                project="vmcnet-phase-e"),
+    "E13": dict(pattern="slurm-e13-baselines-mol-*_{idx}.out", ntasks=18,
+                cell=_e13_cell, nepochs=100000, group_by="system",
+                project="vmcnet-phase-e"),
+    "E14": dict(pattern="slurm-e14-n2-stretched-*_{idx}.out", ntasks=9,
+                cell=_e14_cell, nepochs=100000, group_by="system",
+                project="vmcnet-phase-e"),
 }
 
 

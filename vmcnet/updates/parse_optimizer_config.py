@@ -23,6 +23,7 @@ from .optax_utils import (
     initialize_sgd,
 )
 from .spring import initialize_spring
+from .minsr_momentum import initialize_minsr_momentum
 from .kfac import initialize_kfac
 from .gauss_newton import initialize_gauss_newton
 from .same_sampled_spring_unified import initialize_same_sampled_spring_unified
@@ -152,6 +153,26 @@ def initialize_optimizer(
             update_data_fn,
             learning_rate_schedule,
             vmc_config.optimizer.spring,
+            vmc_config.record_param_l1_norm,
+            apply_pmap=apply_pmap,
+        )
+        return update_param_fn, optimizer_state, key
+    elif vmc_config.optimizer_type == "minsr_momentum":
+        energy_and_statistics_fn = physics.core.create_energy_and_statistics_fn(
+            local_energy_fn, vmc_config.nchains, clipping_fn, vmc_config.nan_safe
+        )
+
+        (
+            update_param_fn,
+            optimizer_state,
+        ) = initialize_minsr_momentum(
+            log_psi_apply,
+            energy_and_statistics_fn,
+            params,
+            get_position_fn,
+            update_data_fn,
+            learning_rate_schedule,
+            vmc_config.optimizer.minsr_momentum,
             vmc_config.record_param_l1_norm,
             apply_pmap=apply_pmap,
         )
