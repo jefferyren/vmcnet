@@ -74,8 +74,17 @@ All three are stochastic-reconfiguration optimizers for neural-network VMC that 
 
 Implementations: `vmcnet/updates/{spring,prime_sr,same_sampled_spring_unified}.py`.
 
-## 3. Headline result (E7, as qualified by E9/E10/E11)
+## 3. Headline result (E7, as qualified by E9/E10/E11, then by Phase D/E)
 
+> *** SUPERSEDED IN PART BY PHASE D/E (2026-09-13). CLAIM B NOW HAS A COUNTEREXAMPLE. ***
+> Everything below is the 50k picture and its numbers still stand at 50k, but the
+> protocol of record is now 100k (Phase D), and on **N2 at 4.0 Bohr — the seventh
+> system, run for the first time in E14 — SS-SPRING diverged to NaNs on 3/3 seeds
+> while SPRING and PRIME-SR both completed.** "Six systems, never lost" is no longer
+> the sentence. Read §5 Phase D and Phase E before quoting any claim here, and state
+> Claim B as "at least as good as PRIME-SR wherever it is stable, with one system where
+> it is not stable at all."
+>
 > **Read §5 Phase C before quoting anything here.** E7's two-system tie is real but does
 > **not** generalise: across eight conditions Claim B never loses, while Claim A fails on
 > oxygen (0/5 seeds) and on carbon at eta=0.05 (0/3). The summary across everything
@@ -177,10 +186,25 @@ and re-proposing them wastes GPU-hours.
    the two values its own paper recommends — which is precisely the wrong place to be at
    a small learning rate.
 
+9. **SS-SPRING is unconditionally stable.** **False** (E14, 2026-09-13). On N2 at a
+   stretched 4.0 Bohr bond it diverges to NaNs on **3/3 seeds**, at epochs 18.6k/17.3k/
+   23.6k of 100k, while SPRING(0.99) and PRIME-SR both complete. It is healthy through
+   epoch 10k — tracking both other arms to within 0.03 Ha — then loses 4-9 Hartree
+   between 10k and 15k. Same eta, same 14 electrons and the same preset family as N2-eq
+   and CO, where it is the best arm on the board; the stretched geometry is the only
+   variable. This was invisible for the whole campaign only because N2-4.0 had never
+   been run. **It is not a 100k phenomenon** — the blow-up is at ~12k epochs, so a 50k
+   Phase C run would have shown it too. Mechanism still open; see §5 Phase E for the
+   exact diagnostic files to pull.
+
 **Still unexplained:** SS-SPRING beats SPRING(0.99) on carbon by ~0.10 mHa at ~2σ, and
 it is neither the warm-up (E6) nor the converged constant (E8). What remains is beta's
 *trajectory* between those endpoints. The claims do not depend on resolving this;
 treat it as future work rather than a blocker.
+
+**Also unexplained, and this one *does* matter:** why the stretched-N2 divergence
+(item 9). A referee will ask whether the same failure lurks on any system not yet
+tried, and the campaign has no answer until the beta trace is examined.
 
 ## 5. Experiment-by-experiment
 
@@ -384,7 +408,131 @@ with failures clustered on one NodeList at seconds-long Elapsed:
 sacct -j <jobid> --format=JobID%22,NodeList%16,State%14,ExitCode,Elapsed | grep -v batch
 ```
 
-### Phase D — QUEUED: the same four experiments at 100k (172 runs, ~1,545 GPU-h)
+### Phase D — COMPLETE (172 runs, 169 with eval): the same four experiments at 100k
+
+**Result (2026-09-13).** 169/172 cells carry an eval energy. The three missing are the
+appended `spring_mu0.999` arm on the molecules (`d10_N2_eq_spring_mu0.999_s1/s2`,
+`d10_CO_spring_mu0.999_s1`), which NaN'd at ~15k epochs — `eta/(1-mu) = 2` at
+eta=0.002, exactly the instability the D10 header flagged as possible. That arm is a
+baseline-strengthening extra, not a table column; the other six arms are complete on
+every system and seed.
+
+**mHa above reference, 100k + eval.** Best fixed mu per system in *italics*.
+
+| system | SPRING 0.95 | SPRING 0.99 | SPRING 0.995 | SPRING 0.999 | PRIME-SR | SS-SPRING |
+|---|---|---|---|---|---|---|
+| carbon (D7) | — | 0.138 ± 0.004 | *0.127 ± 0.006* | — | 0.183 ± 0.007 | 0.142 ± 0.013 |
+| N (D9) | 0.230 | 0.170 ± 0.008 | *0.157 ± 0.001* | 0.204 ± 0.032 | 0.217 ± 0.009 | **0.157 ± 0.014** |
+| O (D9) | *0.405 ± 0.135* | 0.453 ± 0.029 | 0.478 ± 0.030 | 0.572 | 0.577 ± 0.025 | 0.603 ± 0.045 |
+| N2-eq (D10) | 14.050 | 11.120 ± 0.092 | *10.930 ± 0.056* | (1 seed) | 13.266 ± 0.105 | **10.576 ± 0.094** |
+| CO (D10) | 11.667 | 8.838 ± 0.114 | *7.917 ± 0.743* | (2 seeds) | 11.219 ± 0.153 | 8.325 ± 0.210 |
+| carbon eta=0.005 (D11) | — | 0.176 | *0.145 ± 0.008* | 0.159 | 0.378 ± 0.027 | 0.149 ± 0.004 |
+| carbon eta=0.05 (D11) | — | *0.127 ± 0.009* | 0.142 | 0.146 | 0.138 ± 0.006 | 0.132 ± 0.007 |
+
+H4 (D7, raw Ha): SS-SPRING **−2.03421**, SPRING(0.99) −2.03420, PRIME-SR −2.03410,
+SPRING(0.8) −2.03393.
+
+**What changed from 50k, and what did not.**
+
+- **Claim A survives doubling the budget, with the same exception.** SS-SPRING ties or
+  beats the best fixed mu on carbon, H4, N, N2-eq and both carbon etas, and still
+  **loses on oxygen** (+0.198 against mu=0.95). Carbon at eta=0.05 is now a tie
+  (+0.005 ± 0.011) where it lost at 50k, so that half of the 50k caveat was an
+  undertraining artifact; oxygen was not.
+- **CO flipped from a tie to a narrow loss** (SS-SPRING 8.325 vs mu=0.995's 7.917),
+  but mu=0.995's s.e.m. there is 0.743 across 3 seeds — the largest on the board — so
+  treat this as noise, not a result, until it has more seeds.
+- **E10's non-convergence caveat is retired.** The molecular absolute errors fell from
+  ~11.4/9.2 mHa to 10.6/8.3, and arm ordering is unchanged. 100k is now the protocol of
+  record for the whole results section.
+- **PRIME-SR's small-eta failure reproduces at 100k**: 0.378 mHa at eta=0.005 against
+  0.145-0.176 for everything else, a 2.4x gap. §4 item 8's mechanism holds.
+- **Claim B held on all seven Phase D conditions** (O is a statistical tie:
+  0.603 ± 0.045 vs 0.577 ± 0.025). It is Phase E that breaks it.
+
+### Phase E — COMPLETE (57 runs, 54 with eval): the paper's two missing baseline columns
+
+**Why.** The comparison table in both papers carries MinSR and MinSR+M columns, and
+neither baseline had ever been run in this campaign — the only mu=0 runs anywhere were
+three Phase A E0 cells at 25k, one seed, at the wrong learning rate. N2 at 4.0 Bohr had
+also never been run at all, despite the preset existing since Phase A.
+
+- **E12** `e12_baselines_atoms_100k.sbatch` — MinSR and MinSR+M on carbon/N/O, 5 seeds,
+  30 runs. 30/30.
+- **E13** `e13_baselines_molecules_100k.sbatch` — the same two arms on N2-eq/N2-4.0/CO,
+  3 seeds, 18 runs. 18/18.
+- **E14** `e14_n2_stretched_100k.sbatch` — SPRING(0.99)/PRIME-SR/SS-SPRING on N2 at 4.0
+  Bohr, 3 seeds, 9 runs. **6/9.**
+
+Both baselines come from one new optimizer, `minsr_momentum`: mu=0 is MinSR (paper
+Eqs. 41-42), mu=0.9 is MinSR+M (Eqs. 43-44). A unit test pins the mu=0 solve against
+`spring.get_spring_step(mu=0.0)` to 1e-6, so the MinSR column is provably SPRING's own
+linear solve with the momentum switched off rather than a lookalike reimplementation.
+Learning rates are the SPRING paper's per-method tuned values (MinSR 0.1 / MinSR+M 0.2
+on atoms, both 0.02 on molecules) — **not** SPRING's eta, which would manufacture a win
+out of eta/(1-mu); see §4 item 8.
+
+**mHa above reference (H4 excluded; N2-4.0 SPRING/PRIME-SR/SS-SPRING from E14).**
+
+| system | MinSR | MinSR+M | SPRING 0.99 | PRIME-SR | SS-SPRING |
+|---|---|---|---|---|---|
+| carbon | 0.600 ± 0.029 | 0.254 ± 0.008 | 0.138 ± 0.004 | 0.183 ± 0.007 | 0.142 ± 0.013 |
+| N | 0.741 ± 0.019 | 0.563 ± 0.172 | 0.170 ± 0.008 | 0.217 ± 0.009 | 0.157 ± 0.014 |
+| O | 2.325 ± 0.050 | 3.002 ± 0.639 | 0.453 ± 0.029 | 0.577 ± 0.025 | 0.603 ± 0.045 |
+| N2-eq | 21.086 ± 0.358 | 15.539 ± 0.062 | 11.120 ± 0.092 | 13.266 ± 0.105 | 10.576 ± 0.094 |
+| **N2 4.0** | 35.479 ± 11.259 | 18.075 ± 0.085 | 14.990 ± 4.383 | 17.606 ± 0.714 | **DIVERGED 3/3** |
+| CO | 19.829 ± 0.233 | 13.586 ± 0.283 | 8.838 ± 0.114 | 11.219 ± 0.153 | 8.325 ± 0.210 |
+
+**Reproduction against the SPRING paper's Table 1** (their values as mHa above
+benchmark: MinSR 0.5/0.7/2.1/15.5/22.7/16.3; SPRING 0.1/0.2/0.5/10.1/11.5/8.6):
+
+- The **atoms reproduce closely** — our MinSR 0.600/0.741/2.325 against their
+  0.5/0.7/2.1, our SPRING 0.138/0.170/0.453 against their 0.1/0.2/0.5.
+- On **molecules our SPRING matches but our MinSR does not** (SPRING 11.1 vs 10.1 and
+  8.8 vs 8.6; MinSR 21.1 vs 15.5 and 19.8 vs 16.3). That is the expected shape of our
+  missing KFAC preliminary phase: it exists precisely to remove the chaotic early
+  stage, and the arm with no momentum to carry it through suffers most. Say so in the
+  table caption rather than leaving the gap unexplained.
+- **The paper's ordering inverts on oxygen** — our MinSR+M (3.002) is worse than our
+  MinSR (2.325). MinSR+M is also the least seed-stable arm on the atoms (s.e.m. 0.172
+  on N, 0.639 on O, against MinSR's 0.019 and 0.050), again consistent with naive
+  momentum being the arm most exposed to a random start.
+- Transcription warning: the paper's N2-equilibrium MinSR+M cell reads **−108.5294**, a
+  full Hartree above every other entry in that row and *below* the benchmark. Almost
+  certainly a typo for −109.5294. Check the arXiv v2 before citing it.
+
+#### E14 — SS-SPRING DIVERGES ON STRETCHED N2. Claim B's first counterexample.
+
+All three `ssu_defaults` seeds ended `VMC terminated due to Nans! Aborting.`, at epochs
+18572, 17342 and 23559. This is **not** a bad start and **not** infrastructure — the
+noclip energy trace shows it tracking the other arms exactly and then coming apart:
+
+| epoch | 5000 | 10000 | 15000 | 17000 |
+|---|---|---|---|---|
+| SPRING mu=0.99 s0 | −108.967 | −109.088 | −109.134 | −109.144 |
+| PRIME-SR s0 | −108.993 | −109.011 | −109.086 | −109.140 |
+| **SS-SPRING s0** | −109.015 | −109.010 | **−100.086** | −106.038 |
+| **SS-SPRING s1** | −109.084 | −109.060 | **−105.657** | −107.376 |
+| **SS-SPRING s2** | −108.835 | −109.011 | **−101.048** | −108.685 |
+
+Healthy through 10k, loses 4-9 Hartree between 10k and 15k on every seed, partially
+recovers, then dies. Same eta (0.002), same preset family and same 14 electrons as
+N2-eq and CO, where it is the *best* arm — so this is specific to the stretched
+geometry, not to molecules or to the learning rate.
+
+**Do not resubmit `--array=6-8` expecting a number.** Same seeds and same random init
+reproduce the same divergence; 3/3 seeds failing means more seeds very likely fail too.
+The honest table cell is "diverged".
+
+**The mechanism is not yet identified**, and this is the cleanest case the campaign has
+ever had for settling the standing Phase A question — whether beta locks near 1 or
+collapses toward 0 under stress (opposite fixes). The evidence needed is `mu.txt`,
+`r_hat.txt` and `probe_r_ip.txt` from the three logdirs under
+`phase_e/e14_n2_stretched_100k/`, epochs 9k-14k. Those are **not** in the `.out` files
+and wandb drops nothing useful here either — they must be pulled from Savio. Zero
+compute; highest information per GPU-hour of anything outstanding.
+
+### Phase D — superseded header (the plan, as written before the runs)
 
 **Why.** Both comparison papers report at 100k. E10 was visibly unconverged at 50k
 (every arm still improving 0.1-1.0 mHa per 5k, no arm reaching chemical accuracy on
@@ -479,6 +627,28 @@ new script.
   only `wandb-metadata.json`, which is often absent, and silently synced 1 of 24 runs
   while looking successful. Fixed to fail open, but unfiltered is still safer.
 
+**`wandb sync` beta path is broken on the Savio login nodes — use `--legacy`** (found
+2026-09-13). A bare `wandb sync` prints "Using wandb beta sync" and then dies with
+`ServicePollForTokenError: Failed to read port info after 30.0 seconds (wandb-core
+PID=...)`. The helper process never comes up. `wandb sync --legacy "$d"` works every
+time. Symptom to recognise: the run directory is fine and the run itself completed
+normally — only the uploader fails. Also note `wandb` is **not on `PATH`** outside
+`sync_wandb.sh`; prepend
+`export PATH="/global/scratch/users/$USER/envs/vmcnet/bin:$PATH"` before any manual
+`wandb` invocation or you get a bare `command not found` that looks like a broken env.
+
+**A `.synced`-less directory tree makes a "sync Phase E" command re-upload the entire
+campaign** (found 2026-09-13, cost several hours and wiped Phase C's backfill). The
+older runs had no `.synced` markers, so a naive loop over `offline-run-*` walked from
+July 30 forward, re-uploading ~500 runs that were already in wandb — and because a
+re-sync reverts server-side state (below), it destroyed the backfilled `x_eval_*`
+summary fields on Phases A-C *and* undid the `*_killed1200` renames on the two
+superseded E10 cells, recreating a duplicate-name collision that then let the backfill
+stamp a dead 1,200-epoch run with the good run's eval energy. Two defences: mark
+everything already uploaded (`for d in .../offline-run-2026{0730,08}*; do touch
+"$d/.synced"; done`), and **scope any manual sync loop to the date range you actually
+mean**. Verify afterwards with a duplicate-name check, not just a run count.
+
 **`wandb sync` REVERTS server-side edits — re-run the backfill after every sync.** Syncing
 an offline run directory restores that run's *local* state, wiping anything changed
 through the API: run name, notes, and **all backfilled `x_*` summary fields**. Observed
@@ -558,41 +728,43 @@ than measured — they are just as expensive to rediscover.
 ## 10. If you are picking this up cold
 
 1. Read §3 (the qualified headline) and §4 (ideas already ruled out). The single most
-   important fact: **Claim B survived everything across six systems and three learning
-   rates; Claim A did not generalise.** Lead any write-up with Claim B.
-2. **Phase C is complete — E9 50/50, E10 36/36, E11 24/24 — but Phase D is queued and
-   unsubmitted.** The campaign already has enough for the paper at 50k; Phase D re-runs
-   the same four experiments at 100k to match both comparison papers and to retire
-   E10's non-convergence caveat. Nothing has been submitted. Re-time first, because the
-   ~7-8 h (atoms) and ~13-14 h (molecules) per-run figures are extrapolated from the 50k
-   wall times, not measured:
-
-   ```bash
-   sbatch --exclude=n0135.savio3 --array=0 slurm/d7_headtohead_seeds_100k.sbatch
-   ```
-
-   Then D7, D9 and D11 in full, and stage D10 as N2 first before CO:
-
-   ```bash
-   sbatch --exclude=n0135.savio3 --array=0-2,6-8,12-14,18-20,24-26,30-32,36-38 slurm/d10_molecules_hometurf_100k.sbatch
-   ```
-
-   See §5 Phase D for the rest.
+   important fact is no longer the one this list used to open with. **Claim B held on
+   six systems and three learning rates and then found a counterexample on the seventh:
+   SS-SPRING diverges on N2 at 4.0 Bohr, 3/3 seeds (§4 item 9, §5 Phase E).** Claim A
+   still does not generalise (oxygen). Lead with Claim B *scoped to stability*, and
+   never write "never lost" again.
+2. **All compute is done. Phases A-E: 617 runs, no outstanding cells worth re-running.**
+   Phase D is 169/172 (the 3 misses are the appended mu=0.999 molecular arm, which
+   diverged at eta/(1-mu)=2); Phase E is 54/57 (the 3 misses are the E14 SS-SPRING
+   divergence, which is a result, not a gap). **Do not resubmit either set** — both are
+   deterministic given the seed and will reproduce.
+3. **The one outstanding task is zero-compute and high-value: diagnose the E14
+   divergence.** Pull `mu.txt`, `r_hat.txt`, `probe_r_ip.txt` from the three logdirs
+   under `phase_e/e14_n2_stretched_100k/` and read epochs 9k-14k. This settles the
+   standing Phase A question (does beta lock near 1, or collapse toward 0?) on the
+   cleanest instance the campaign has produced, and a referee will ask whether the same
+   failure lurks elsewhere. Nothing in the paper is safe to write until it has an
+   answer or an explicit "we do not know".
 3. **The paper's spine, in the order the evidence supports:** (a) Claim B — SS-SPRING is
-   at least as good as PRIME-SR on six systems and three learning rates, never losing,
-   and beats it by ~2.9 mHa on PRIME-SR's *own* N2-eq and CO at their *own* settings.
+   at least as good as PRIME-SR on six systems and three learning rates **wherever it is
+   stable**, beating it by ~2.5 mHa on PRIME-SR's *own* N2-eq and CO at their *own*
+   settings — **and it is not stable on the seventh, N2 at 4.0 Bohr, where it diverges
+   3/3 and PRIME-SR completes.** The stability exception must travel with the claim in
+   the abstract, not be deferred to a limitations paragraph.
    (b) The mechanism — PRIME-SR's momentum is blind to eta, settles at ~0.953, and that
    costs it a ~10× smaller effective step wherever the norm cap is not binding (§4 item
    8; r = −0.89 to −0.92 between log₁₀(eta/(1−mu)) and final error). (c) Claim A, scoped
    honestly: parity without tuning on carbon, H4, N, CO and N2-eq; loses on O and on
    carbon at eta=0.05.
-4. **Fix `preset_configs/{N2_eq,CO}.json`** — they still set `eval.nchains=2000` against
-   `vmc.nchains=1000`, which OOM'd E10's entire eval phase. The sbatch overrides it now,
-   but any new script using those presets hits it again.
-5. Optional: add **mu = 0.999** to E9's grid. On N the ordering is monotone in mu, so the
-   optimum sits at the grid edge and N's tuned baseline is understated. Index-compatible:
-   append `case 5)` and submit `--array=50-59` (10 runs, ~45 GPU-h). It would sharpen a
-   Claim A caveat, not change Claim B.
+4. **Fix `preset_configs/{N2_eq,N2_4.0,CO}.json`** — all three still set
+   `eval.nchains=2000` against `vmc.nchains=1000`, which OOM'd E10's entire eval phase.
+   D10, E13 and E14 all override it, but any new script using those presets hits it
+   again. (N2_4.0 was added to this list in Phase E — same 14 electrons as CO.)
+5. ~~Optional: add mu = 0.999 to E9's grid.~~ **Done in Phase D** (appended as arm 5 to
+   D9/D10/D11). On N it is *worse* than 0.995 (0.204 ± 0.032 vs 0.157 ± 0.001), so the
+   grid-edge worry was unfounded — the optimum is interior after all, and N's tuned
+   baseline was not understated. On the molecules at eta=0.002 it diverged on 3 of 6
+   cells (`eta/(1-mu) = 2`).
 6. **Do not** re-propose: the small-N hypothesis, the warm-up mechanism, the
    matched-constant explanation, or an eta sweep *as a step-size study on short runs*.
    All settled — see §4.
@@ -601,9 +773,13 @@ than measured — they are just as expensive to rediscover.
    SS-SPRING has the LOWEST mean (0.036 mHa) and worst-case (0.178) regret of any arm, and
    matches oracle per-condition tuning to −0.009 mHa on average. State Claim A as a
    regret result, not as per-condition parity.
-8. **Do not** quote E10 as asymptotic. Nothing there is converged at 50k — it is a
-   fixed-budget comparison, and its sub-0.5 mHa Claim A margins are the order of the
-   per-run MC error. Quote the seed sweeps (3/3, 0/5) alongside any σ.
+8. **Quote D10, not E10, for the molecules.** The 50k non-convergence caveat is retired
+   — D10 doubles the budget, absolute errors fall ~0.8 mHa, and arm ordering is
+   unchanged. What still holds: the sub-0.5 mHa Claim A margins there remain the order
+   of the per-run MC error, so quote the seed sweeps alongside any σ. Molecular eval
+   uses **1000 inference walkers, not the papers' 2000** (memory limit at 14 electrons);
+   the estimator is unbiased either way, the error bar is √2 wider, and the measured
+   blocked MC error is ~0.19 mHa against ~0.035 on the atoms. Footnote it.
 9. **Never compare arms at small eta without a high-momentum fixed baseline.** E10's
    original grid (mu ≤ 0.95) would have produced a 3.5 mHa "win" that was pure
    `eta/(1−mu)` artifact. §4 item 8 is the general statement of this trap.

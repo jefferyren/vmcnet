@@ -229,6 +229,21 @@ def _e14_cell(idx):
         x_experiment="E14", x_system="N2_4.0", x_arm=arm, x_seed=seed, x_eta=0.002)
 
 
+def _e15_cell(idx):
+    """Array index -> cell, mirroring e15_n2_stretched_seedcheck.sbatch exactly.
+
+    Seeds start at 3: E14 already spent 0-2 on this cell, and E15 exists to add fresh
+    ones. Most of these runs are expected to diverge and so carry no eval energy at
+    all -- that is the result, not a parse failure. Use divergence_check.py for the
+    stability verdict; this registry entry is only so a SURVIVING seed's energy can be
+    extracted and compared against E14's SPRING and PRIME-SR cells.
+    """
+    seed = idx + 3
+    return f"e15_N2_4.0_ssu_defaults_s{seed}", dict(
+        x_experiment="E15", x_system="N2_4.0", x_arm="ssu_defaults", x_seed=seed,
+        x_eta=0.002)
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -263,6 +278,9 @@ EXPERIMENTS = {
                 project="vmcnet-phase-e"),
     "E14": dict(pattern="slurm-e14-n2-stretched-*_{idx}.out", ntasks=9,
                 cell=_e14_cell, nepochs=100000, group_by="system",
+                project="vmcnet-phase-e"),
+    "E15": dict(pattern="slurm-e15-n2-seedcheck-*_{idx}.out", ntasks=5,
+                cell=_e15_cell, nepochs=100000, group_by="system",
                 project="vmcnet-phase-e"),
 }
 
@@ -403,7 +421,11 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "E11": "e11_eta_robustness_carbon",
            "D7": "d7_headtohead_seeds_100k", "D9": "d9_atoms_headtohead_100k",
            "D10": "d10_molecules_hometurf_100k",
-           "D11": "d11_eta_robustness_carbon_100k"}
+           "D11": "d11_eta_robustness_carbon_100k",
+           "E12": "e12_baselines_atoms_100k",
+           "E13": "e13_baselines_molecules_100k",
+           "E14": "e14_n2_stretched_100k",
+           "E15": "e15_n2_stretched_seedcheck"}
 
 
 def report(experiment, rows, duplicates):
