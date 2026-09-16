@@ -49,6 +49,11 @@ EXPERIMENTS = {
                                 i % 3)),
     "E15": dict(pattern="slurm-e15-n2-seedcheck-*_{idx}.out", ntasks=5, nepochs=100000,
                 cell=lambda i: ("ssu_defaults", i + 3)),
+    # SPRING proper is not the arm that blew up on this system -- SS-SPRING was -- but
+    # mu=0.995 is a longer momentum tail than anything E14 ran here, so check rather
+    # than assume. Index is the seed; seeds 0-2, shared with E14's SPRING arm.
+    "E16": dict(pattern="slurm-e16-n2-mu0995-*_{idx}.out", ntasks=3, nepochs=100000,
+                cell=lambda i: ("spring_mu0.995", i)),
 }
 
 

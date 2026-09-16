@@ -244,6 +244,20 @@ def _e15_cell(idx):
         x_eta=0.002)
 
 
+def _e16_cell(idx):
+    """Array index -> cell, mirroring e16_n2_stretched_spring_mu0995.sbatch exactly.
+
+    Index IS the seed: E16 deliberately reuses E14's seeds 0-2 rather than taking fresh
+    ones, because the question is a paired one -- what does mu=0.99 -> 0.995 do to this
+    cell, holding the init fixed. Parse it alongside E14 (`--experiment E14 E16`) and
+    read the two spring arms against each other seed by seed; the arm means alone hide
+    the pairing that makes three seeds worth anything here.
+    """
+    return f"e16_N2_4.0_spring_mu0.995_s{idx}", dict(
+        x_experiment="E16", x_system="N2_4.0", x_arm="spring_mu0.995", x_seed=idx,
+        x_eta=0.002)
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -281,6 +295,9 @@ EXPERIMENTS = {
                 project="vmcnet-phase-e"),
     "E15": dict(pattern="slurm-e15-n2-seedcheck-*_{idx}.out", ntasks=5,
                 cell=_e15_cell, nepochs=100000, group_by="system",
+                project="vmcnet-phase-e"),
+    "E16": dict(pattern="slurm-e16-n2-mu0995-*_{idx}.out", ntasks=3,
+                cell=_e16_cell, nepochs=100000, group_by="system",
                 project="vmcnet-phase-e"),
 }
 
@@ -425,7 +442,8 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "E12": "e12_baselines_atoms_100k",
            "E13": "e13_baselines_molecules_100k",
            "E14": "e14_n2_stretched_100k",
-           "E15": "e15_n2_stretched_seedcheck"}
+           "E15": "e15_n2_stretched_seedcheck",
+           "E16": "e16_n2_stretched_spring_mu0995"}
 
 
 def report(experiment, rows, duplicates):
