@@ -258,6 +258,22 @@ def _e16_cell(idx):
         x_eta=0.002)
 
 
+def _e17_cell(idx):
+    """Array index -> cell, mirroring e17_n2_stretched_eta_sweep.sbatch exactly.
+
+    idx // 3 picks the eta, idx % 3 is the seed. The seeds are E14's own 0-2 rather than
+    fresh ones, deliberately: every E17 cell pairs with an E14 ssu_defaults cell at the
+    same init, and a halved-eta result is only worth reading against its own twin. Cells
+    that diverge carry no eval energy at all -- that is the result, not a parse failure;
+    divergence_check.py is what answers the stability question.
+    """
+    eta = ("0.001", "0.0005")[idx // 3]
+    seed = idx % 3
+    return f"e17_N2_4.0_ssu_defaults_eta{eta}_s{seed}", dict(
+        x_experiment="E17", x_system="N2_4.0", x_arm="ssu_defaults", x_seed=seed,
+        x_eta=float(eta))
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -298,6 +314,9 @@ EXPERIMENTS = {
                 project="vmcnet-phase-e"),
     "E16": dict(pattern="slurm-e16-n2-mu0995-*_{idx}.out", ntasks=3,
                 cell=_e16_cell, nepochs=100000, group_by="system",
+                project="vmcnet-phase-e"),
+    "E17": dict(pattern="slurm-e17-n2-eta-*_{idx}.out", ntasks=6,
+                cell=_e17_cell, nepochs=100000, group_by="eta",
                 project="vmcnet-phase-e"),
 }
 
@@ -443,7 +462,8 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "E13": "e13_baselines_molecules_100k",
            "E14": "e14_n2_stretched_100k",
            "E15": "e15_n2_stretched_seedcheck",
-           "E16": "e16_n2_stretched_spring_mu0995"}
+           "E16": "e16_n2_stretched_spring_mu0995",
+           "E17": "e17_n2_stretched_eta_sweep"}
 
 
 def report(experiment, rows, duplicates):

@@ -64,6 +64,12 @@
 #SBATCH --time=36:00:00
 #SBATCH --array=0-2
 #SBATCH --output=slurm-%x-%A_%a.out
+# BAKED IN rather than left to the submit-command comment above. One bad GPU on
+# n0135.savio3 shredded 44 of E10's first 74 tasks, dying in 1-57 s in the pre-flight
+# jax.devices() check with CUDA_ERROR_NO_DEVICE while SLURM reported the node healthy.
+# Keep this until the node is proven fixed. NOTE that a command-line --exclude REPLACES
+# this rather than merging, so to exclude another node as well, list both.
+#SBATCH --exclude=n0135.savio3
 
 set -eo pipefail
 export PATH="/global/scratch/users/$USER/envs/vmcnet/bin:$PATH"

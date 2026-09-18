@@ -54,6 +54,11 @@ EXPERIMENTS = {
     # than assume. Index is the seed; seeds 0-2, shared with E14's SPRING arm.
     "E16": dict(pattern="slurm-e16-n2-mu0995-*_{idx}.out", ntasks=3, nepochs=100000,
                 cell=lambda i: ("spring_mu0.995", i)),
+    # E17 varies eta, not the arm, so the "arm" label has to carry the eta -- otherwise
+    # the per-arm verdict at the bottom of the report pools the two learning rates and
+    # prints one meaningless fraction across both.
+    "E17": dict(pattern="slurm-e17-n2-eta-*_{idx}.out", ntasks=6, nepochs=100000,
+                cell=lambda i: (f"ssu_eta{('0.001', '0.0005')[i // 3]}", i % 3)),
 }
 
 
