@@ -59,6 +59,10 @@ EXPERIMENTS = {
     # prints one meaningless fraction across both.
     "E17": dict(pattern="slurm-e17-n2-eta-*_{idx}.out", ntasks=6, nepochs=100000,
                 cell=lambda i: (f"ssu_eta{('0.001', '0.0005')[i // 3]}", i % 3)),
+    # Same "arm label carries the eta" convention as E17, so E14/E17/E18 can be parsed
+    # in one invocation and read as a single eta axis.
+    "E18": dict(pattern="slurm-e18-n2-eta0015-*_{idx}.out", ntasks=3, nepochs=100000,
+                cell=lambda i: ("ssu_eta0.0015", i)),
 }
 
 

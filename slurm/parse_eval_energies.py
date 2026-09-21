@@ -274,6 +274,18 @@ def _e17_cell(idx):
         x_eta=float(eta))
 
 
+def _e18_cell(idx):
+    """Array index -> cell, mirroring e18_n2_stretched_eta0015.sbatch exactly.
+
+    Index IS the seed. Seeds 0-2 are E14's and E17's own, deliberately: eta=0.0015 only
+    means something read against the same init at 0.002 and 0.001, so parse the three
+    together (`--experiment E14 E17 E18`) rather than quoting E18's mean on its own.
+    """
+    return f"e18_N2_4.0_ssu_defaults_eta0.0015_s{idx}", dict(
+        x_experiment="E18", x_system="N2_4.0", x_arm="ssu_defaults", x_seed=idx,
+        x_eta=0.0015)
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -317,6 +329,9 @@ EXPERIMENTS = {
                 project="vmcnet-phase-e"),
     "E17": dict(pattern="slurm-e17-n2-eta-*_{idx}.out", ntasks=6,
                 cell=_e17_cell, nepochs=100000, group_by="eta",
+                project="vmcnet-phase-e"),
+    "E18": dict(pattern="slurm-e18-n2-eta0015-*_{idx}.out", ntasks=3,
+                cell=_e18_cell, nepochs=100000, group_by="eta",
                 project="vmcnet-phase-e"),
 }
 
@@ -463,7 +478,8 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "E14": "e14_n2_stretched_100k",
            "E15": "e15_n2_stretched_seedcheck",
            "E16": "e16_n2_stretched_spring_mu0995",
-           "E17": "e17_n2_stretched_eta_sweep"}
+           "E17": "e17_n2_stretched_eta_sweep",
+           "E18": "e18_n2_stretched_eta0015"}
 
 
 def report(experiment, rows, duplicates):
