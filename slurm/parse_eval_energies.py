@@ -286,6 +286,22 @@ def _e18_cell(idx):
         x_eta=0.0015)
 
 
+def _e19_cell(idx):
+    """Array index -> cell, mirroring e19_n2_stretched_normcap.sbatch exactly.
+
+    idx // 3 picks the arm (norm_constraint=1e-2, then constrain_norm=False), idx % 3 is
+    the seed. eta is 0.002 in BOTH arms -- unchanged from E14, deliberately, because the
+    point is to keep the raw step large while removing the sustained capping. Seeds 0-2
+    are E14's own, which diverged 3/3 under C=1e-3, so every cell is a paired
+    counterfactual on an init known to fail. Diverged cells carry no eval energy, which
+    is a result rather than a parse failure.
+    """
+    arm = ("ssu_cap0.01", "ssu_nocap")[idx // 3]
+    seed = idx % 3
+    return f"e19_N2_4.0_{arm}_s{seed}", dict(
+        x_experiment="E19", x_system="N2_4.0", x_arm=arm, x_seed=seed, x_eta=0.002)
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -332,6 +348,11 @@ EXPERIMENTS = {
                 project="vmcnet-phase-e"),
     "E18": dict(pattern="slurm-e18-n2-eta0015-*_{idx}.out", ntasks=3,
                 cell=_e18_cell, nepochs=100000, group_by="eta",
+                project="vmcnet-phase-e"),
+    # group_by="system" not "eta": both E19 arms share eta=0.002 and differ in the norm
+    # constraint, so keying the summary on eta would merge them into one row.
+    "E19": dict(pattern="slurm-e19-n2-normcap-*_{idx}.out", ntasks=6,
+                cell=_e19_cell, nepochs=100000, group_by="system",
                 project="vmcnet-phase-e"),
 }
 
@@ -479,7 +500,8 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "E15": "e15_n2_stretched_seedcheck",
            "E16": "e16_n2_stretched_spring_mu0995",
            "E17": "e17_n2_stretched_eta_sweep",
-           "E18": "e18_n2_stretched_eta0015"}
+           "E18": "e18_n2_stretched_eta0015",
+           "E19": "e19_n2_stretched_normcap"}
 
 
 def report(experiment, rows, duplicates):

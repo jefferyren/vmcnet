@@ -63,6 +63,11 @@ EXPERIMENTS = {
     # in one invocation and read as a single eta axis.
     "E18": dict(pattern="slurm-e18-n2-eta0015-*_{idx}.out", ntasks=3, nepochs=100000,
                 cell=lambda i: ("ssu_eta0.0015", i)),
+    # E19 varies the norm constraint at fixed eta, so the arm label carries the cap
+    # setting. Parse with E14 (`--experiment E14 E19`): E14's 3/3 divergence at
+    # C=1e-3 on these same three seeds IS the control.
+    "E19": dict(pattern="slurm-e19-n2-normcap-*_{idx}.out", ntasks=6, nepochs=100000,
+                cell=lambda i: (("ssu_cap0.01", "ssu_nocap")[i // 3], i % 3)),
 }
 
 
