@@ -117,6 +117,9 @@ METHOD = {
     "spring_mu0.999": "SPRING",
     "prime_sr": "PRIME-SR",
     "ssu_defaults": "SS-SPRING",
+    # E19 varies only the norm constraint, so both arms are the same method.
+    "ssu_cap0.01": "SS-SPRING",
+    "ssu_nocap": "SS-SPRING",
     # Phase E baselines. Both come from the minsr_momentum optimizer; mu is what
     # separates them, so they are two arms rather than two methods in the code.
     "minsr": "MinSR",
@@ -594,7 +597,10 @@ def backfill(rows, entity, project):
         config = dict(x_experiment=row["x_experiment"], x_system=row["x_system"],
                       x_arm=row["x_arm"], x_seed=row["x_seed"], x_eta=row["x_eta"],
                       x_method=METHOD[row["x_arm"]],
-                      x_adaptive=row["x_arm"] in ("prime_sr", "ssu_defaults"),
+                      # Derived from METHOD rather than a list of arm names: E19's
+                      # SS-SPRING arms are not named ssu_defaults, and a hard-coded
+                      # list silently wrote x_adaptive=False on them.
+                      x_adaptive=METHOD[row["x_arm"]] in ("PRIME-SR", "SS-SPRING"),
                       x_nepochs=EXPERIMENTS[row["x_experiment"]]["nepochs"])
         # Row-supplied mu wins: E7/D7's "spring_tuned" has a per-system mu that no
         # arm-keyed table can express.

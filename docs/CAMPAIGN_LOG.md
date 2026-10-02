@@ -1,7 +1,9 @@
 # Campaign log — SS-SPRING vs SPRING vs PRIME-SR
 
 **Handoff document.** Read this first in a new session; it is self-contained. Last
-updated 2026-08-15, after E10 completed Phase C. 325 runs, ~1050 GPU-hours, all on Savio
+updated 2026-10-01: added **§5 Phase F**, the plan to stabilise SS-SPRING on stretched
+N2 — recommended steps only, **nothing run yet**. Before that, 2026-09-25, after E19
+settled the stretched-N2 divergence (§4 items 9-15, §5 Phase E). All runs on Savio
 GTX2080TIs.
 
 **Campaign summary report for non-specialist readers (2026-08-17):** [SS-SPRING — full
@@ -11,7 +13,27 @@ list and the regret framing. 12 panels spanning all three wandb projects. Built 
 `slurm/report_campaign_summary.py`, which edits in place via `from_url` (a bare
 `wr.Report()` + `save()` would mint a duplicate). Re-verify after any change.
 
-> **Current state (2026-08-15): Phase C is COMPLETE (E9, E10, E11 — 110 runs).**
+> **Current state (2026-09-25): all phases complete, and the stretched-N2 divergence is
+> diagnosed.**
+>
+> - **Claim B has one counterexample, and it is a momentum problem, not an SS-SPRING
+>   defect.** On N2 at 4.0 Bohr SS-SPRING diverges on **6/8 seeds** (E14+E15), and plain
+>   fixed-momentum SPRING at mu=0.995 diverges on 2/3 (E16) at the same eta and norm cap.
+>   SPRING(0.99) and PRIME-SR complete 3/3. When SS-SPRING survives it is the best arm on
+>   the board (12.272 mHa on 2 seeds, vs SPRING(0.99) 14.990 and PRIME-SR 17.606).
+> - **Mechanism, confirmed by intervention (E19):** the realized update step is too large
+>   on this geometry, and the norm constraint is a *load-bearing stabilizer* that
+>   postpones divergence while it binds. Loosening or removing it made 5 of 6 seeds fail
+>   ~3× sooner. E14's seeds died after the cap released as the inverse-time schedule
+>   shrank the raw step.
+> - **Both obvious fixes are closed.** Lower eta is stable but 2–73 mHa worse than
+>   SPRING(0.99) (E17, E18); a looser cap diverges sooner (E19). **The untested options
+>   are now a ranked plan, §5 Phase F (2026-10-01, nothing run).** Its first step (F1) is
+>   a zero-GPU per-epoch check on a Savio login node.
+> - Claims A and B on the other six systems are unchanged — see §3 and §5 Phase D.
+
+> **Historical state (2026-08-15) — superseded by the banner above, kept for the record.
+> Phase C is COMPLETE (E9, E10, E11 — 110 runs).**
 >
 > - **Claim B (SS-SPRING ≥ PRIME-SR) is the result.** Six systems, three learning rates,
 >   **never lost**: 38σ on CO, 13σ on N2-eq, 12.5σ on carbon at eta=0.005, 3.9σ on N,
@@ -76,14 +98,16 @@ Implementations: `vmcnet/updates/{spring,prime_sr,same_sampled_spring_unified}.p
 
 ## 3. Headline result (E7, as qualified by E9/E10/E11, then by Phase D/E)
 
-> *** SUPERSEDED IN PART BY PHASE D/E (2026-09-13). CLAIM B NOW HAS A COUNTEREXAMPLE. ***
+> *** SUPERSEDED IN PART BY PHASE D/E (2026-09-13, corrected 2026-09-25). CLAIM B HAS A COUNTEREXAMPLE. ***
 > Everything below is the 50k picture and its numbers still stand at 50k, but the
 > protocol of record is now 100k (Phase D), and on **N2 at 4.0 Bohr — the seventh
-> system, run for the first time in E14 — SS-SPRING diverged to NaNs on 3/3 seeds
-> while SPRING and PRIME-SR both completed.** "Six systems, never lost" is no longer
-> the sentence. Read §5 Phase D and Phase E before quoting any claim here, and state
-> Claim B as "at least as good as PRIME-SR wherever it is stable, with one system where
-> it is not stable at all."
+> system, first run in E14 — SS-SPRING diverges to NaNs on 6/8 seeds (E14+E15).**
+> SPRING(0.99) and PRIME-SR complete 3/3, but SPRING at mu=0.995 also diverges 2/3
+> (E16), so this is a high-momentum instability on this geometry rather than a defect
+> specific to SS-SPRING (§4 item 9). "Six systems, never lost" is no longer the
+> sentence. Read §5 Phase D and Phase E before quoting any claim here, and state Claim B
+> as "at least as good as PRIME-SR wherever it is stable, with one system where it is not
+> stable at all."
 >
 > **Read §5 Phase C before quoting anything here.** E7's two-system tie is real but does
 > **not** generalise: across eight conditions Claim B never loses, while Claim A fails on
@@ -186,25 +210,77 @@ and re-proposing them wastes GPU-hours.
    the two values its own paper recommends — which is precisely the wrong place to be at
    a small learning rate.
 
-9. **SS-SPRING is unconditionally stable.** **False** (E14, 2026-09-13). On N2 at a
-   stretched 4.0 Bohr bond it diverges to NaNs on **3/3 seeds**, at epochs 18.6k/17.3k/
-   23.6k of 100k, while SPRING(0.99) and PRIME-SR both complete. It is healthy through
-   epoch 10k — tracking both other arms to within 0.03 Ha — then loses 4-9 Hartree
-   between 10k and 15k. Same eta, same 14 electrons and the same preset family as N2-eq
-   and CO, where it is the best arm on the board; the stretched geometry is the only
-   variable. This was invisible for the whole campaign only because N2-4.0 had never
-   been run. **It is not a 100k phenomenon** — the blow-up is at ~12k epochs, so a 50k
-   Phase C run would have shown it too. Mechanism still open; see §5 Phase E for the
-   exact diagnostic files to pull.
+9. **SS-SPRING is unconditionally stable.** **False** (E14, 2026-09-13; corrected by
+   E15-E19, 2026-09-25). On N2 at a stretched 4.0 Bohr bond it diverges to NaNs on **6/8
+   seeds** (E14 3/3 at 18.6k/17.3k/23.6k; E15 3/5 at 56.3k/67.8k/16.6k), while
+   SPRING(0.99) and PRIME-SR complete 3/3. In E14 it is healthy through ~10k, tracking
+   both other arms to within 0.03 Ha, then loses 4-9 Hartree. Same eta and the same 14
+   electrons as N2-eq and CO, where it is the best arm. **It is not SS-SPRING-specific:**
+   fixed SPRING at mu=0.995 diverges 2/3 at the same eta and cap (E16). **Mechanism,
+   established by intervention in E19:** the realized update step is too large on this
+   geometry, and the norm constraint (C=1e-3) is a load-bearing stabilizer. Loosening it
+   to 1e-2 or removing it made 6/6 diverge, 5 of them ~3× sooner (healthy until 4.1-5.8k
+   against E14's 13.2-18.8k), with beta unchanged (0.9957-0.9968) and the raw step ~1.5×
+   larger (3.0-3.9e-3 against 2.0-2.2e-3). E14's seeds died after the cap released as the
+   inverse-time schedule shrank the raw step. Not MCMC (acceptance flat at 0.47), not a
+   seed fluke, not a 100k-only effect.
+
+10. **Under stress, beta locks near 1 or collapses toward 0 (opposite fixes).** **Neither**
+    (E14 diagnostics, 2026-09-15) — this settles the standing Phase A question. beta sits
+    at 0.9955-0.9966 throughout and drifts slightly *down* (0.991-0.993) through the
+    blow-up while the step norm changes 2000×. The controller is inert, not runaway:
+    `min(1, r_ip)` maps r_ip values of 8, 3e6 and 1e13 all to exactly 1, so a residual
+    that grew a trillion-fold is indistinguishable from one that stalled, and the `alph`
+    weighting decays its gain like log n / n.
+
+11. **The accumulated step eta/(1−beta) predicts divergence.** **Refuted** (E17, E18).
+    Over the 12 SS-SPRING runs with traces at four etas, diverged runs span 0.36-0.53 and
+    survivors 0.20-0.53. The two largest values in the set — E18 seed 2 (0.528, diverged)
+    and E18 seed 0 (0.525, survived) — are equal to three decimals with opposite outcomes.
+
+12. **The constrain_norm/phi mismatch causes the divergence.** (The cap rescales the
+    applied update but not the momentum buffer, while the next rhs subtracts A(beta·phi)
+    as though the full step had been taken.) **Refuted** (E19). It predicted that
+    removing the sustained capping would stabilise the run; instead every seed diverged,
+    most of them sooner. This was briefly the favoured reading after E17, and it was wrong.
+
+13. **Lowering eta fixes it.** **Closed** (E17, E18). Stable, but every stable eta is worse
+    than SPRING(0.99)'s 14.990: eta=0.0015 1/3 diverged, 17.216 ± 6.415 (n=2); 0.001 0/3,
+    29.186 ± 8.206; 0.0005 0/3, 87.705 ± 18.442. The eta=0.001 runs were still descending
+    at 100k — undertrained, the PRIME-SR small-eta failure reproduced on SS-SPRING.
+
+14. **beta is flat in eta, so eta/(1−beta) scales with eta.** **Only in the cap-bound
+    regime** (E17). D11/E11's carbon sweep showed beta flat to 0.0016 across 10× eta, but
+    those runs were capped — and while the cap binds the trajectory is eta-invariant by
+    construction, so the probe sees the same parameters at every eta. When the cap does
+    not bind, beta rises as eta falls: ~0.996 (0.002) → ~0.997 (0.0015, 0.001) → ~0.998
+    (0.0005). E17 was designed on the flat-beta assumption, and its predicted accumulated
+    steps were wrong by up to 2×.
+
+15. **Cap fraction is a clean threshold for divergence.** **A risk factor, not a
+    threshold** (E15 added, 2026-09-23). Over epochs 0-12k the 7 diverged runs sit at
+    66.5-93% capped and the 10 survivors at 0-65.5%: a perfect rank order (AUC 1.000,
+    p ≈ 5e-5) but a 1-point margin (E15 s3 66.5% diverged, s4 65.5% survived), and
+    window-dependent — it fails outright at 4k-10k windows and is circular past ~15k,
+    where post-blow-up epochs score as capped. What is robust at every window is E18's
+    within-condition contrast (matched eta, and beta 0.99714 vs 0.99716: 35%/37% capped
+    survived, 80% diverged). Cap fraction is collinear with the raw step norm by
+    construction, which is why E19 had to intervene rather than infer.
 
 **Still unexplained:** SS-SPRING beats SPRING(0.99) on carbon by ~0.10 mHa at ~2σ, and
 it is neither the warm-up (E6) nor the converged constant (E8). What remains is beta's
 *trajectory* between those endpoints. The claims do not depend on resolving this;
 treat it as future work rather than a blocker.
 
-**Also unexplained, and this one *does* matter:** why the stretched-N2 divergence
-(item 9). A referee will ask whether the same failure lurks on any system not yet
-tried, and the campaign has no answer until the beta trace is examined.
+**Also unexplained, and this one *does* matter:** *why* the realized step is so large on
+stretched N2 specifically (item 9). The divergence mechanism is established; its upstream
+cause is not. The natural explanation — a broken triple bond is strongly multireference,
+so the Gram matrix keeps a near-degenerate cluster and the damped solve keeps returning
+large steps — is inference: Gram eigenvalues are not logged. A referee will ask whether
+the same failure lurks on other stretched or multireference systems. **§5 Phase F
+(2026-10-01) lists the candidate upstream causes, each with a test:** numerical
+breakdown of the float32 Gram solve, heavy-tailed per-walker Jacobian rows, raw
+electron–nuclear input features at a long bond, and slow inter-atom MCMC mixing.
 
 ## 5. Experiment-by-experiment
 
@@ -480,7 +556,7 @@ out of eta/(1-mu); see §4 item 8.
 | N | 0.741 ± 0.019 | 0.563 ± 0.172 | 0.170 ± 0.008 | 0.217 ± 0.009 | 0.157 ± 0.014 |
 | O | 2.325 ± 0.050 | 3.002 ± 0.639 | 0.453 ± 0.029 | 0.577 ± 0.025 | 0.603 ± 0.045 |
 | N2-eq | 21.086 ± 0.358 | 15.539 ± 0.062 | 11.120 ± 0.092 | 13.266 ± 0.105 | 10.576 ± 0.094 |
-| **N2 4.0** | 35.479 ± 11.259 | 18.075 ± 0.085 | 14.990 ± 4.383 | 17.606 ± 0.714 | **DIVERGED 3/3** |
+| **N2 4.0** | 35.479 ± 11.259 | 18.075 ± 0.085 | 14.990 ± 4.383 | 17.606 ± 0.714 | **DIVERGED 6/8** (E14+E15) |
 | CO | 19.829 ± 0.233 | 13.586 ± 0.283 | 8.838 ± 0.114 | 11.219 ± 0.153 | 8.325 ± 0.210 |
 
 **Reproduction against the SPRING paper's Table 1** (their values as mHa above
@@ -521,16 +597,337 @@ N2-eq and CO, where it is the *best* arm — so this is specific to the stretche
 geometry, not to molecules or to the learning rate.
 
 **Do not resubmit `--array=6-8` expecting a number.** Same seeds and same random init
-reproduce the same divergence; 3/3 seeds failing means more seeds very likely fail too.
-The honest table cell is "diverged".
+reproduce the same divergence. The honest table cell is "diverged" — though not every
+seed fails: E15's five fresh seeds went 3/5, so the rate is **6/8**, and any survivor
+mean is survivorship-biased and must be quoted with the fraction.
 
-**The mechanism is not yet identified**, and this is the cleanest case the campaign has
-ever had for settling the standing Phase A question — whether beta locks near 1 or
-collapses toward 0 under stress (opposite fixes). The evidence needed is `mu.txt`,
-`r_hat.txt` and `probe_r_ip.txt` from the three logdirs under
-`phase_e/e14_n2_stretched_100k/`, epochs 9k-14k. Those are **not** in the `.out` files
-and wandb drops nothing useful here either — they must be pulled from Savio. Zero
-compute; highest information per GPU-hour of anything outstanding.
+**Mechanism: resolved — see the follow-up below and §4 items 9-15.** An earlier version
+of this entry said the diagnostics (`mu`, `r_hat`, `probe_r_ip`) had to be pulled from
+Savio. They did not: all of them are in the wandb run history (`scan_history`, sampled
+every 10 steps), which is where the analysis below came from.
+
+#### E15-E19 — the stretched-N2 follow-up (23 runs, all N2 at 4.0 Bohr, 100k + eval)
+
+Everything here is at eta=0.002 with C=1e-3 unless stated. mHa above −109.2021 Ha (a
+spectroscopic MLR reference — prefer arm-vs-arm comparisons). Report: [Ada-SPRING
+divergence on stretched N2](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-e/reports/Ada-SPRING-divergence-on-stretched-N2--VmlldzoxNzk0MDIzNw).
+
+| exp | arm | what varied | diverged | eval (survivors) |
+|---|---|---|---|---|
+| E15 | SS-SPRING | fresh seeds 3-7 | 3/5 | 12.272 ± 0.807 (n=2, s4/s5) |
+| E16 | SPRING mu=0.995 | momentum 0.99 → 0.995 | 2/3 | 18.049 (n=1) |
+| E17 | SS-SPRING | eta = 0.001 / 0.0005 | 0/3, 0/3 | 29.186 ± 8.206 / 87.705 ± 18.442 |
+| E18 | SS-SPRING | eta = 0.0015 | 1/3 | 17.216 ± 6.415 (n=2) |
+| E19 | SS-SPRING | C = 1e-2 / no constraint | 3/3, 3/3 | — |
+
+- **E15 — is 3/3 a property or a fluke?** Neither cleanly: 3/5, seed-dependent. Seeds 3
+  and 6 ran healthy to 37.9k and 61.1k before failing, far later than E14's. Pooled: 6/8.
+- **E16 — SS-SPRING, or high momentum?** High momentum. Fixed SPRING at 0.995 diverges
+  2/3 on the same seeds, eta and cap, and its one survivor is *worse* than 0.99's.
+- **E17 — is the operating point wrong rather than the method?** Stable at both etas but
+  far worse, and its premise failed: beta rose to compensate (§4 item 14), so the
+  accumulated step moved much less than designed.
+- **E18 — is any eta both stable and competitive?** No. It landed on the pre-registered
+  prior (18-20 mHa) and still diverged once. The eta axis is closed. Its within-condition
+  contrast is the strongest observational evidence for the cap's role (§4 item 15).
+- **E19 — mismatch, or big step?** Big step (§4 items 9, 12). The discriminating run: eta
+  held at 0.002 so the raw step stays large, sustained capping removed. Over the common
+  pre-divergence window 1000-4000: beta unchanged (0.9957-0.9968), raw step ~1.5× larger
+  than E14's, counterfactual cap fraction 100% in every run. 5/6 left health ~3× sooner.
+  No death before ~4.1k, so not E2's init chaos, and the C=1e-2 control failed in the
+  same window as no-cap. C=1e-2 saved no seed — the raw step does not reach it until the
+  blow-up is already underway.
+
+Worth keeping, with a correction: `probe_res_norm` rises ~100 steps before the main
+blow-up in E14 s1 (steps 10450-10550) while energy, variance and step norm are all still
+normal. **Corrected 2026-10-01** (zero-compute re-check of all 12 SS-SPRING failures in
+wandb history, `slurm/n2_failure_anatomy.py`): the ~100-step lead holds only for E14 s0
+and s1. Elsewhere the unclipped `r_ip` first exceeds 2 at most 10–20 steps ahead (5
+runs), or only at the event itself (5 runs). Treat it as a detector, not an early warning.
+See §5 Phase F, step F3.
+
+### Phase F — PLANNED, NOT RUN: stabilising SS-SPRING on stretched N2 (written 2026-10-01)
+
+**Nothing in this section has been run.** It is the recommended plan from a literature
+review and a zero-compute re-read of E14-E19 (session of 2026-09-25). Results will come
+from the Savio runs below. Update each step in place as it lands, as §9 asks.
+
+**Goal.** SS-SPRING stable on N2 at 4.0 Bohr at eta=0.002, keeping its ~12 mHa
+survivor accuracy. Three constraints:
+1. No new per-system knob, or Claim A is lost.
+2. Nothing changes on the six systems where it is already stable. A safeguard must be
+   provably inactive there; check this offline on the existing histories.
+3. Every arm is reported with its divergence fraction (survivor means are biased).
+
+#### Why these steps — observations that motivate the plan (hypotheses until F1/F2 confirm them)
+
+These were read from existing wandb history, which is sampled every 10th step. Script:
+`slurm/n2_failure_anatomy.py`.
+
+- **The failure looks two-stage.**
+  - Stage 1: every diverged run except E18 s2 has a *first* catastrophe. Within ~20
+    steps the energy rises ≥1 Ha (up to ~8), the unclipped variance jumps ≥20× (up to
+    ~5000×), and the pre-clip step jumps by orders of magnitude.
+  - Stage 2: the run partly recovers, then NaNs 0.2k–56k steps later. E14 s1: first
+    event 10,590, NaN 17,340. E16 s1: 41,450 → 97,240.
+  - `divergence_check.py`'s "healthy until" therefore marks the *second* event. Any fix
+    has to prevent or undo the first.
+- **After the first event the momentum buffer exceeds what SPRING can produce.**
+  - In exact arithmetic ‖φ_k‖ ≤ β‖φ_{k−1}‖ + ‖ε̄_k‖/(2√λ), because 0 ≼ P_k ≺ I.
+  - All 17 surviving runs stay below 0.95 of this bound (median 0.24).
+  - Every *capped* diverged run exceeds it after its first event, by 30× to 10¹²×.
+  - E18 s2 crosses it at ~10,630, while variance and r_ip still look normal.
+  - Nothing in exact arithmetic can break this bound, so the suspect is floating-point
+    error in the Gram solve. That is the hypothesis F1 and F2 test.
+  - An exploratory CPU check at init (not in the repo) pointed the same way: vmcnet's
+    float32 operators stop satisfying SPRING's defining equation once ‖φ‖ is ~10³–10⁵ ×
+    ‖ε̄‖, while float64 does not.
+- **Early warnings are short.**
+  - r_ip > 2 leads the first event by ~90 steps only in E14 s0 and s1.
+  - Elsewhere it leads by 10–20 steps or not at all (healthy r_ip: median 1.00,
+    p99.9 2.3).
+  - A pre-clip step above 3× its trailing 500-step median marks every first event,
+    0–130 steps ahead (400 in one uncapped run). It fired 3 times in 1.7M survivor steps.
+  - So these signals suit rewind-and-recover, not prevention.
+- **Clipped local-energy outliers do not kick the update.**
+  - After unclipped-variance spikes (>10× trailing median), the pre-clip step stays at
+    0.94–1.01 of its trailing median for 600 steps, in every arm.
+  - E_L clipping works. The per-walker Jacobian O(x) = ∂log|ψ| is the channel nobody
+    clips.
+- **Initialization is not sufficient on its own.**
+  - For seeds 0-2 every arm starts from identical parameters: model init is the first
+    key split in `_setup_vmc`, before the optimizer exists.
+  - SPRING(0.99) and PRIME-SR survive from the same inits SS-SPRING dies from.
+- **The literature says the probe picks an unsafe β by construction.**
+  - It targets a noise-free, consistent system (b = Ax*), so it measures the mean
+    contraction that momentum accelerates.
+  - Heavy-ball sketch-and-project theory guarantees acceleration only for the *mean*
+    error. Second moments and noise floors grow as β→1 (Loizou & Richtárik 2020;
+    Bollapragada, Chen & Ward 2024). For noisy least squares, heavy ball gives no
+    acceleration at all (Kidambi et al. 2018).
+  - The map β=(1−ρ)/(1+ρ) is the quadratic-optimal one with no robustness margin
+    (Lessard, Recht & Packard 2016).
+- **The norm cap's C=1e-3 came from a different norm.**
+  - FermiNet/K-FAC's C=1e-3 bounds an *F-weighted* (Fisher) norm; see kfac_jax
+    `_maybe_apply_norm_constraint`. SPRING's cap is Euclidean, by the SPRING paper's
+    choice.
+  - A Fisher cap on the same batch cannot see the carried momentum: SPRING makes
+    Oφ_k ≈ ε̄ on its own walkers. Any function-space cap must be measured on held-out
+    walkers.
+
+#### Steps, in order
+
+**F1 — Per-epoch confirmation on Savio.** Zero GPU, ~10 min on a login node.
+
+```
+python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"
+```
+
+The per-epoch `.txt` files make the bound exact per step; the wandb version above had to
+chain it over 10-step gaps. Read three things:
+- **(a) Does any survivor exceed 1?** If so, the bound check is miscalibrated: stop and
+  fix it.
+- **(b) In E18 s2, E14 s0 and the rest, does the ratio cross 1 before the variance and
+  energy rise, or only after?**
+  - Before: numerics can *trigger* the first event, and F2's guard may prevent it.
+  - Only after: numerics is stage 2 only. F2 rescues runs, but stage 1 needs F4–F5.
+- **(c) Checkpoints for F2:** confirm `checkpoints/10000.npz` exists in the E14 s1 and
+  E18 s2 logdirs. Both scripts used `checkpoint_every=10000`.
+
+**F2 — Instrument SS-SPRING and add an exact-bound guard.** Code first, then ~2–3 GPU-h.
+
+New metrics, all free or one extra jvp, from quantities `same_sampled_spring_unified.py`
+already computes:
+- the bound ratio;
+- the equation residual ‖Aφ_k − ε̄ + λ(T+λ)⁻¹r‖/‖ε̄‖ (the one extra jvp);
+- λ_max(T), tr(T), min(tvals) before clipping, and the count of eigenvalues below the
+  damping;
+- max/median per-walker ‖O_i‖², from the kernel diagonal;
+- ‖Ō‖²/tr(T), which measures the cancellation when the uncentered kernel is centered;
+- ‖A(βφ)‖/‖ε̄‖, the size of the carried momentum on fresh walkers;
+- per-block ‖Δθ‖.
+
+The guard, behind a flag that defaults to off so default runs stay bit-identical:
+- If ‖φ_k‖ exceeds the bound, replace φ_k with the fresh μ=0 step (same
+  eigendecomposition, one extra vjp), or redo that step in float64.
+- There is no tuned threshold, because the bound is exact.
+- Add no new optimizer-state fields, so existing checkpoints still reload.
+
+The experiment: replay E14 s1 (first event 10,590) and E18 s2 (bound crossing ~10,630)
+from their 10k checkpoints to ~16k, guard off and guard on — 4 runs.
+- **First, check guard-off against the original `.out` energies.** If they part
+  immediately, the instrumentation changed the rounding. Note it and lean on the event
+  timing instead.
+- **Readouts:**
+  - the per-step ordering of residual, bound ratio, variance and energy around the event;
+  - whether guard-on avoids the event, or recovers to baseline energy instead of reaching
+    NaN.
+- **If the numerics are confirmed, the structural fix** is to build T, A and Aᵀ from one
+  materialized, centered per-walker Jacobian (N×P float32, ~3 GB at N=1000). Today T is
+  an uncentered neural-tangents kernel that is double-centered after the fact, while A
+  goes through a separate jvp path. Precedent: MinSR needs float64 for its small Gram
+  eigenvalues to be reliable (Chen & Heyl 2024).
+
+**F3 — Detect, skip or rewind, and reset momentum.** This is PaLM's recipe. The trigger
+is the F2 residual, or a pre-clip step above 3× its trailing 500-step median (calibrated
+above).
+
+On a trigger:
+1. Skip the step and keep φ.
+2. If it recurs within ~100 steps, rewind to an in-memory snapshot at least 300 steps
+   old.
+3. Fold a new key into the MCMC RNG, zero φ and the probe state, hold β ≤ 0.99 for ~2k
+   steps, then release.
+
+Precedents:
+- PaLM restarted ~100 steps before each loss spike and skipped 200–500 batches;
+  replaying the same batches from an earlier checkpoint did not spike (Chowdhery et al.
+  2023).
+- SPAM resets momentum and then warms it back up (Huang et al. 2025).
+- Adaptive restart for accelerated methods (O'Donoghue & Candès 2015).
+
+Test it like F2, since runs are deterministic until the first trigger. Report trigger
+counts per run as a stability metric.
+
+**F4 — Give the β controller a stability channel.** This changes the method, so if it
+is adopted, every system must be rerun.
+- **(a) Noise-aware target.** Options, in decreasing ambition:
+  - YellowFin's variance term, estimated from split-walker fresh steps (Zhang &
+    Mitliagkas 2019);
+  - an ASGD-style statistical margin (Jain et al. 2018);
+  - at minimum, β = (1−cρ)/(1+cρ) with c > 1.
+- **(b) Feedback on growth.**
+  - Route r_ip > 1 into its own channel. Today's map sends r > 1 toward β → 1, the wrong
+    way, so simply unclipping it is not enough.
+  - Replace the log n/n gain with a CUSUM or EWMA with a floored constant gain
+    (constant-gain stochastic approximation for tracking: Benveniste, Métivier &
+    Priouret 1990).
+  - Update (1−β) asymmetrically: ×4 on an alarm, ×0.95 per quiet window. This is the
+    bold-driver pattern, as in K-FAC's Levenberg–Marquardt damping rule (Martens &
+    Grosse 2015).
+- **(c) Couple damping to β.**
+  - PRIME-SR's Theorem 3.1 requires η₀ ≤ 2λ(1−μ)/C_g.
+  - Holding η/(λ(1−β)) at SPRING(0.99)'s value gives λ = 2.5e-3 at β = 0.996.
+  - It is one config value and the untested alternative to lowering eta. It is a design
+    rule, not a predictor; §4 item 11 stands.
+- Screen with the F6 branches first, then confirm with full runs.
+
+**F5 — Stretched-geometry levers.** These change the protocol, so run all three arms if
+any is adopted.
+- **Clip per-walker Jacobian rows.** Clip ‖O_i‖ at 5× the median, centered like the E_L
+  clip, or use Pathak & Wagner's (2020) node-distance weights. The closest precedent is
+  PS-Clip-VMC, which clips both local energies and per-sample gradients. There, standard
+  FermiNet on argon "exhibits a sharp increase in energy around step 55,000" and never
+  recovers (Grohs & Nobile 2026).
+- **Log-rescale the electron–nuclear inputs** to log(1+|r−R|)/|r−R|. PsiFormer found raw
+  FermiNet features unstable for widely separated atoms (von Glehn, Spencer & Pfau 2023).
+  vmcnet feeds raw r−R and |r−R| (`equivariance.compute_input_streams`).
+- **Inter-atom MCMC moves.**
+  - First log the per-walker electron count on each atom, to see whether electrons
+    transfer between atoms at all at 4.0 Bohr. An acceptance of 0.47 does not show this.
+  - If they don't, add nucleus-centred global single-electron jumps (Scherbela, Gao,
+    Grohs & Günnemann 2025, who also train with SPRING).
+  - Webber & Lindsey (2022) saw energy spikes when slow-mixing MCMC reached unexplored
+    regions.
+- **Median-centered clipping** (`clip_center: "median"`). PsiFormer calls the change
+  "small but critical"; `N2_4.0.json` centers on the unclipped mean.
+
+**F6 — Experimental designs, to keep GPU cost down.**
+- **Event-triggered fixes (F2, F3):** deterministic replays of the failing seeds. Each run
+  is its own control until the first trigger.
+- **Continuous fixes (F4, F5):** branch from E14's 10k checkpoints, which come before all
+  three first events (10.6k–14.3k).
+  - Use ~4 fresh RNG keys per state × 10k steps, baseline vs fix, paired by state and
+    key.
+  - This needs a `fold_in(key, branch)` after reload, because reload restores the key
+    (§7).
+  - The baseline branches alone answer "hazard or doom": if every branch from s1's 10k
+    state fails, the state was already doomed; if few do, it is a stochastic hazard.
+- **Confirmation:**
+  - full 100k with ≥8 fresh seeds at the E14 cell;
+  - a no-regression check on N2-eq, CO and carbon/N/O, or for a safeguard, an offline
+    replay showing it never fires there.
+
+**F7 — Initialization** (the question raised 2026-09-25). Expect a modest effect at
+most, since identical inits survive under SPRING(0.99), but it is cheap to settle.
+- **Init-seed × MCMC-seed factorial.**
+  - Add a `model_seed` used only for `slog_psi.init`, still consuming the key split so the
+    MCMC stream is unchanged.
+  - Cross E18's surviving s0 init with s2's stream, and vice versa.
+- **Orthogonal gain 1 (or `xavier_normal`) on all kernels.** Config only.
+  - The current init is orthogonal gain 2 on the unmixed, 2e-2e and orbital kernels.
+    That is a weight variance of ≈4/n, 2× He's, and past the tanh order–chaos point σ_w=1
+    (Schoenholz et al. 2017).
+  - **Not He:** it is a ReLU prescription. With fan-in 8 and raw Bohr-scale inputs it
+    saturates the first layer.
+- **Orbital gain 1 alone.** This nearly just rescales ψ (≈c¹⁴), so it isolates the effect
+  of SPRING's Euclidean terms: damping, the proximal term and the ℓ₂ cap break
+  natural-gradient reparametrization invariance (Martens 2020).
+- **A 5000-step KFAC warm start**, as in the SPRING paper's N2 runs. This campaign has
+  never used one (§6).
+
+**F8 — Lower priority.**
+- **Held-out function-space trust region.** Hold out 64–128 walkers and cap η²·Var(O_Vφ)
+  — the analogue of K-FAC's Fisher-norm cap (Ba, Grosse & Martens 2017) and of TRPO
+  (Schulman et al. 2015). Or accept a step only if its reweighted overlap exceeds 0.98
+  (Li et al. 2024).
+- **Separate budget for the carried kernel part,** using ‖P_Kφ‖² = ‖φ‖² −
+  (Oφ)ᵀ(T+λ)⁻¹(Oφ), which costs O(N²) from the existing eigendecomposition.
+- **Long memory without amplification.** Options are QHM (Ma & Yarats 2019), AggMo (Lucas
+  et al. 2019), or β≈0.99 dynamics plus tail-averaged parameters (Epperly, Goldshlager &
+  Webber 2026).
+- **K-FAC-style per-step (α, μ)** from a 2×2 model fitted on held-out walkers. On the
+  method's own batch it trivially returns μ=0.
+- **The older options stay valid as ablations:**
+  - Cap β at 0.99. It tunes the knob Claim A leaves untuned.
+  - Scale `norm_constraint` down with the learning-rate schedule.
+
+**What each outcome means for the paper.**
+- **F2/F3 fix it without touching the stable systems:** report SS-SPRING plus the
+  safeguard as the method, state the safeguard in the method section, and present N2-4.0
+  as a stability result.
+- **Only F4 or F5 fixes it:** the method or the protocol changed, so every system is
+  rerun.
+- **Nothing fixes it:** report it as it stands (§10 item 3, last bullet).
+
+**References** (checked 2026-09-25)
+- SPRING and SR theory:
+  - [SPRING](https://arxiv.org/abs/2401.10190)
+  - [PRIME-SR](https://arxiv.org/abs/2604.18357)
+  - [Goldshlager, Hu & Lin 2025](https://arxiv.org/abs/2508.21022)
+  - [MinSR](https://arxiv.org/abs/2302.01941)
+  - [Martens 2020](https://jmlr.org/papers/v21/17-678.html)
+- Stochastic momentum:
+  - [Loizou & Richtárik 2020](https://arxiv.org/abs/1712.09677)
+  - [Bollapragada, Chen & Ward 2024](https://arxiv.org/abs/2206.07553)
+  - [Kidambi et al. 2018](https://arxiv.org/abs/1803.05591)
+  - [Jain et al. 2018](https://arxiv.org/abs/1704.08227)
+  - [Lessard, Recht & Packard 2016](https://arxiv.org/abs/1408.3595)
+  - [YellowFin](https://arxiv.org/abs/1706.03471)
+  - [Benveniste et al. 1990](https://doi.org/10.1007/978-3-642-75894-2)
+- Restarts and spikes:
+  - [O'Donoghue & Candès 2015](https://arxiv.org/abs/1204.3982)
+  - [PaLM](https://jmlr.org/papers/v24/22-1144.html)
+  - [SPAM](https://arxiv.org/abs/2501.06842)
+- Trust regions:
+  - [K-FAC](https://arxiv.org/abs/1503.05671)
+  - [Ba, Grosse & Martens 2017](https://jimmylba.github.io/papers/nsync.pdf)
+  - [TRPO](https://arxiv.org/abs/1502.05477)
+  - [Li et al. 2024](https://arxiv.org/abs/2404.09280)
+- VMC robustness:
+  - [Grohs & Nobile 2026](https://arxiv.org/abs/2606.26009)
+  - [Pathak & Wagner 2020](https://arxiv.org/abs/2002.01434)
+  - [PsiFormer](https://arxiv.org/abs/2211.13672)
+  - [Scherbela et al. 2025](https://arxiv.org/abs/2504.06087)
+  - [Webber & Lindsey 2022](https://arxiv.org/abs/2106.10558)
+- Memory without amplification:
+  - [QHM](https://arxiv.org/abs/1810.06801)
+  - [AggMo](https://arxiv.org/abs/1804.00325)
+  - [Epperly, Goldshlager & Webber 2026](https://arxiv.org/abs/2411.19877)
+- Initialization:
+  - [Schoenholz et al. 2017](https://arxiv.org/abs/1611.01232)
+  - [He et al. 2015](https://arxiv.org/abs/1502.01852)
+  - [Glorot & Bengio 2010](https://proceedings.mlr.press/v9/glorot10a.html)
 
 ### Phase D — superseded header (the plan, as written before the runs)
 
@@ -687,6 +1084,37 @@ Two more found while writing the E9/E11 reports:
   the absence is visible, and say so in the report text. Do not delete the runset to
   make the verifier quiet.
 
+**Found during the stretched-N2 follow-up (2026-09-15 to 09-25):**
+
+- **The optimizer diagnostics are in wandb, not only on Savio.** `mu`, `r_hat`,
+  `probe_r_ip`, `probe_res_norm`, `norm_cap_applied` and `update_sq_norm_preclip` are all in
+  run history via `scan_history` (sampled every 10 steps). This log once said they had to
+  be pulled from the logdirs; that was wrong.
+- **`norm_cap_applied` is hard-wired to 0.0 when `constrain_norm=False`**
+  (`get_update_norm_diagnostics`), and under a different C it measures against that C. To
+  compare across constraint settings, compute the fraction of steps with
+  `update_sq_norm_preclip > 1e-3` yourself.
+- **`parse_eval_energies.py` prints "N cell(s) need a real rerun — resubmit exactly these"
+  for diverged cells.** For a stability experiment that advice is wrong: divergence is the
+  result. `divergence_check.py` is the authority on whether and when a run diverged.
+- **Registering a new experiment touches five places:** in `parse_eval_energies.py` the
+  `_eNN_cell` function, the `EXPERIMENTS` entry, the `SCRIPTS` entry and — for any new arm
+  name — `METHOD`; plus the `EXPERIMENTS` entry in `divergence_check.py`. A missing
+  `SCRIPTS` entry crashes `report()`; a missing `METHOD` entry crashes the backfill.
+  `x_adaptive` used to be a hard-coded tuple of arm names and would silently have written
+  `False` on E19's SS-SPRING arms; it is now derived from `METHOD`.
+- **Run the analysis scripts with the `vmcnet-py312` interpreter.** The conda `(base)`
+  Python has no `wandb`, so `--backfill` dies with `ModuleNotFoundError` *after* printing a
+  perfectly good summary.
+- **`sacct` shows only today's jobs by default** — pass `-S now-7days` (and `-X` to
+  collapse job steps), or a job submitted days ago looks like it never ran.
+- **Test sbatch index arithmetic under bash, not zsh.** zsh arrays are 1-indexed and bash's
+  are 0-indexed, so checking `${ETAS[$i]}` in an interactive zsh gives wrong answers. Use
+  `bash -c '...'`.
+- **The n0135 exclusion is baked into E15-E19** as `#SBATCH --exclude=n0135.savio3`; every
+  older script still relies on its submit-command comment. A command-line `--exclude`
+  *replaces* the directive rather than merging with it.
+
 ## 8. Code and assets added during the campaign
 
 - **Diagnostics** in all three optimizers: `update_sq_norm_preclip`,
@@ -702,6 +1130,24 @@ Two more found while writing the E9/E11 reports:
 - **Paper draft**: `docs/results_section.md` — the results section, every number
   recomputed from the .out files / wandb at draft time rather than transcribed.
 - **Skill**: `wandb-experiment-report` — builds these reports and verifies them.
+- **`slurm/divergence_check.py`** — when and how each run died, read from the `.out` files
+  (wandb downsamples and drops the terminal NaN row). The authority for stability
+  experiments; `parse_eval_energies.py` answers the different question of what energy a
+  run reached.
+- **Stretched-N2 follow-up scripts**: `slurm/e15_n2_stretched_seedcheck.sbatch`,
+  `e16_n2_stretched_spring_mu0995.sbatch`, `e17_n2_stretched_eta_sweep.sbatch`,
+  `e18_n2_stretched_eta0015.sbatch`, `e19_n2_stretched_normcap.sbatch`. Each header records
+  the prediction as it stood *before* the run.
+- **`slurm/n2_failure_anatomy.py`** (2026-10-01). Reports *how* the N2-4.0 runs failed;
+  `divergence_check.py` reports *when*. It covers:
+  - first-catastrophe detection;
+  - SPRING's exact-arithmetic bound on the momentum buffer;
+  - trigger calibration;
+  - the local-energy-spike response.
+
+  It reads wandb history by default, or per-epoch logdir `.txt` files with `--logdirs`
+  (Phase F step F1). The wandb mode has been run. The `--logdirs` mode has only been
+  checked on a synthetic logdir.
 
 ## 9. How to keep this document current
 
@@ -727,62 +1173,78 @@ than measured — they are just as expensive to rediscover.
 
 ## 10. If you are picking this up cold
 
-1. Read §3 (the qualified headline) and §4 (ideas already ruled out). The single most
-   important fact is no longer the one this list used to open with. **Claim B held on
-   six systems and three learning rates and then found a counterexample on the seventh:
-   SS-SPRING diverges on N2 at 4.0 Bohr, 3/3 seeds (§4 item 9, §5 Phase E).** Claim A
-   still does not generalise (oxygen). Lead with Claim B *scoped to stability*, and
-   never write "never lost" again.
-2. **All compute is done. Phases A-E: 617 runs, no outstanding cells worth re-running.**
-   Phase D is 169/172 (the 3 misses are the appended mu=0.999 molecular arm, which
-   diverged at eta/(1-mu)=2); Phase E is 54/57 (the 3 misses are the E14 SS-SPRING
-   divergence, which is a result, not a gap). **Do not resubmit either set** — both are
-   deterministic given the seed and will reproduce.
-3. **The one outstanding task is zero-compute and high-value: diagnose the E14
-   divergence.** Pull `mu.txt`, `r_hat.txt`, `probe_r_ip.txt` from the three logdirs
-   under `phase_e/e14_n2_stretched_100k/` and read epochs 9k-14k. This settles the
-   standing Phase A question (does beta lock near 1, or collapse toward 0?) on the
-   cleanest instance the campaign has produced, and a referee will ask whether the same
-   failure lurks elsewhere. Nothing in the paper is safe to write until it has an
-   answer or an explicit "we do not know".
-3. **The paper's spine, in the order the evidence supports:** (a) Claim B — SS-SPRING is
+1. Read §3 (the qualified headline) and §4 (ideas already ruled out). **Claim B held on
+   six systems and three learning rates and has one counterexample on the seventh:
+   SS-SPRING diverges on N2 at 4.0 Bohr on 6/8 seeds (§4 item 9, §5 Phase E).** It is a
+   high-momentum instability — fixed SPRING at mu=0.995 also diverges there — not an
+   SS-SPRING defect. Claim A still does not generalise (oxygen). Lead with Claim B *scoped
+   to stability*, and never write "never lost" again.
+2. **All planned compute is done.** Phases A-E: 617 runs, plus 23 in the E15-E19
+   stretched-N2 follow-up. Phase D is 169/172 (the 3 misses are the appended mu=0.999
+   molecular arm, which diverged at eta/(1-mu)=2); Phase E's misses and every E15-E19
+   divergence are results, not gaps. **Do not resubmit diverged cells** — they are
+   deterministic given the seed.
+3. **The stretched-N2 divergence is diagnosed (§4 items 9-15).** The realized step is too
+   large on this geometry and the norm constraint postpones divergence while it binds.
+   Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
+   sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
+   - **Next action: F1.** On a Savio login node, run
+     `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
+     (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
+     whether F2's numerical guard alone can prevent the first catastrophe, or only rescue
+     runs after it. Also confirm the E14 s1 and E18 s2 10k checkpoints exist.
+   - **Then F2:** add the instrumentation and the exact-bound guard (flag, off by
+     default), and replay E14 s1 and E18 s2 from 10k, guard off and on (~2–3 GPU-h).
+   - **Then F3–F7 as F2 directs.** These are rewind-and-reset, a controller stability
+     channel, damping coupled to β, per-walker Jacobian clipping, log-rescaled inputs,
+     inter-atom MCMC moves, and the init factorial.
+   - The earlier options stand as ablations, not the method:
+     - Cap β at 0.99. It tunes the knob Claim A leaves untuned.
+     - Scale `norm_constraint` with the schedule.
+   - **Or report it as it stands**: "at momentum ≳0.995 the realized step is too large on
+     stretched N2; the trust region delays divergence but does not prevent it." That is
+     honest and complete without further compute.
+4. **The paper's spine, in the order the evidence supports:** (a) Claim B — SS-SPRING is
    at least as good as PRIME-SR on six systems and three learning rates **wherever it is
    stable**, beating it by ~2.5 mHa on PRIME-SR's *own* N2-eq and CO at their *own*
-   settings — **and it is not stable on the seventh, N2 at 4.0 Bohr, where it diverges
-   3/3 and PRIME-SR completes.** The stability exception must travel with the claim in
-   the abstract, not be deferred to a limitations paragraph.
+   settings — **and it is not stable on the seventh, N2 at 4.0 Bohr, where it diverges on
+   6/8 seeds (as does fixed SPRING at mu=0.995 on 2/3) while SPRING(0.99) and PRIME-SR
+   complete.** The stability exception must travel with the claim in the abstract, not be
+   deferred to a limitations paragraph.
    (b) The mechanism — PRIME-SR's momentum is blind to eta, settles at ~0.953, and that
    costs it a ~10× smaller effective step wherever the norm cap is not binding (§4 item
    8; r = −0.89 to −0.92 between log₁₀(eta/(1−mu)) and final error). (c) Claim A, scoped
    honestly: parity without tuning on carbon, H4, N, CO and N2-eq; loses on O and on
    carbon at eta=0.05.
-4. **Fix `preset_configs/{N2_eq,N2_4.0,CO}.json`** — all three still set
+5. **Fix `preset_configs/{N2_eq,N2_4.0,CO}.json`** — all three still set
    `eval.nchains=2000` against `vmc.nchains=1000`, which OOM'd E10's entire eval phase.
    D10, E13 and E14 all override it, but any new script using those presets hits it
    again. (N2_4.0 was added to this list in Phase E — same 14 electrons as CO.)
-5. ~~Optional: add mu = 0.999 to E9's grid.~~ **Done in Phase D** (appended as arm 5 to
+6. ~~Optional: add mu = 0.999 to E9's grid.~~ **Done in Phase D** (appended as arm 5 to
    D9/D10/D11). On N it is *worse* than 0.995 (0.204 ± 0.032 vs 0.157 ± 0.001), so the
    grid-edge worry was unfounded — the optimum is interior after all, and N's tuned
    baseline was not understated. On the molecules at eta=0.002 it diverged on 3 of 6
    cells (`eta/(1-mu) = 2`).
-6. **Do not** re-propose: the small-N hypothesis, the warm-up mechanism, the
-   matched-constant explanation, or an eta sweep *as a step-size study on short runs*.
+7. **Do not** re-propose: the small-N hypothesis, the warm-up mechanism, the
+   matched-constant explanation, an eta sweep *as a step-size study on short runs*, beta
+   locking at 1, the accumulated step as a stability predictor, the constrain_norm/phi
+   mismatch, lowering eta as the stretched-N2 fix, or cap fraction as a clean threshold.
    All settled — see §4.
-7. **Do not** overstate Claim A. It fails on oxygen (0/5 seeds) and carbon at eta=0.05
+8. **Do not** overstate Claim A. It fails on oxygen (0/5 seeds) and carbon at eta=0.05
    (0/3). But do not swing too far the other way either: across all seven conditions
    SS-SPRING has the LOWEST mean (0.036 mHa) and worst-case (0.178) regret of any arm, and
    matches oracle per-condition tuning to −0.009 mHa on average. State Claim A as a
    regret result, not as per-condition parity.
-8. **Quote D10, not E10, for the molecules.** The 50k non-convergence caveat is retired
+9. **Quote D10, not E10, for the molecules.** The 50k non-convergence caveat is retired
    — D10 doubles the budget, absolute errors fall ~0.8 mHa, and arm ordering is
    unchanged. What still holds: the sub-0.5 mHa Claim A margins there remain the order
    of the per-run MC error, so quote the seed sweeps alongside any σ. Molecular eval
    uses **1000 inference walkers, not the papers' 2000** (memory limit at 14 electrons);
    the estimator is unbiased either way, the error bar is √2 wider, and the measured
    blocked MC error is ~0.19 mHa against ~0.035 on the atoms. Footnote it.
-9. **Never compare arms at small eta without a high-momentum fixed baseline.** E10's
+10. **Never compare arms at small eta without a high-momentum fixed baseline.** E10's
    original grid (mu ≤ 0.95) would have produced a 3.5 mHa "win" that was pure
    `eta/(1−mu)` artifact. §4 item 8 is the general statement of this trap.
-10. **Always pull the `.out` files and check the eval phase actually ran**, and **re-run
+11. **Always pull the `.out` files and check the eval phase actually ran**, and **re-run
     the backfill after every sync** (§7). wandb drops eval entirely and a sync reverts
     server-side edits, so both failures are invisible in the wandb UI.
