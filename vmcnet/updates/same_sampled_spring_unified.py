@@ -91,6 +91,19 @@ def _build_operators(
     params: P,
     positions: Array,
 ) -> Tuple[Callable[[P], Array], Callable[[Array], P], Array, Array]:
+    """Build the shared SPRING linear operators (see _build_operators_with_stats)."""
+    apply_A, apply_AT, tvals, tvecs, _ = _build_operators_with_stats(
+        kernel_fn, log_psi_apply, params, positions
+    )
+    return apply_A, apply_AT, tvals, tvecs
+
+
+def _build_operators_with_stats(
+    kernel_fn: Callable,
+    log_psi_apply: ModelApply[P],
+    params: P,
+    positions: Array,
+) -> Tuple[Callable[[P], Array], Callable[[Array], P], Array, Array, dict]:
     """Build the shared SPRING linear operators at the current (params, positions).
 
     The main solve and the probe solve must use identical operators, so they are built
@@ -106,9 +119,14 @@ def _build_operators(
         positions: current walker positions, shape (nchains, ...).
 
     Returns:
-        Tuple (apply_A, apply_AT, Tvals, Tvecs) where apply_A: P -> Array[nchains]
-        (mean-zero), apply_AT: Array[nchains] -> P, and Tvals/Tvecs are the
-        eigendecomposition of T = A Aᵀ + (1/N) ones onesᵀ.
+        Tuple (apply_A, apply_AT, Tvals, Tvecs, stats) where apply_A:
+        P -> Array[nchains] (mean-zero), apply_AT: Array[nchains] -> P, Tvals/Tvecs are the
+        eigendecomposition of T = A Aᵀ + (1/N) ones onesᵀ, and stats holds two
+        diagnostics of the kernel (unused, hence compiled away, unless logged):
+        "diag_mean_jac_sq_over_trace" = ||mean_i O_i||^2 / tr(centered kernel),
+        the size of the cancellation when the uncentered kernel is centered, and
+        "diag_walker_rownorm_max_over_median" = max/median of the per-walker
+        centered squared Jacobian norms (the diagonal of the centered kernel).
     """
     nchains = positions.shape[0]
     sqrt_n = jnp.sqrt(nchains)
@@ -130,12 +148,20 @@ def _build_operators(
         return multiply_tree_by_scalar(dtheta, 1.0 / sqrt_n)
 
     t = kernel_fn(positions, positions, "ntk", params) / nchains
+    uncentered_trace = jnp.trace(t)
     t = t - jnp.mean(t, axis=0, keepdims=True)
     t = t - jnp.mean(t, axis=1, keepdims=True)
+    row_sq = jnp.diag(t)
+    centered_trace = jnp.sum(row_sq)
+    stats = {
+        "diag_mean_jac_sq_over_trace": (uncentered_trace - centered_trace)
+        / centered_trace,
+        "diag_walker_rownorm_max_over_median": jnp.max(row_sq) / jnp.median(row_sq),
+    }
     t = t + ones @ ones.T / nchains
     t = (t + t.T) / 2
     tvals, tvecs = jnp.linalg.eigh(t)
-    return apply_A, apply_AT, tvals, tvecs
+    return apply_A, apply_AT, tvals, tvecs, stats
 
 
 def _adaptive_beta_update(
@@ -235,9 +261,10 @@ def get_same_sampled_spring_unified_step(
     probe_lr: float,
     adaptive_eta: bool,
     adaptive_probe: bool,
+    return_diagnostics: bool = False,
 ) -> Callable[
     [Array, P, Array, SameSampledSPRINGUnifiedState],
-    Tuple[P, SameSampledSPRINGUnifiedState],
+    Tuple,
 ]:
     """Get the same_sampled_spring_unified step kernel.
 
@@ -246,6 +273,18 @@ def get_same_sampled_spring_unified_step(
     parameter delta already scaled by `-eta_main`. The main SPRING solve and the probe
     solve reuse the same operators and single eigendecomposition; only their additive
     damping differs.
+
+    With `return_diagnostics=True` it returns `(updates, new_state, diag)`, where diag
+    is a dict of scalar diagnostics of the main solve (all prefixed "diag_"):
+
+    - bound_ratio: ||phi_k|| / (beta ||phi_{k-1}|| + ||eps|| / (2 sqrt(damping))). In
+      exact arithmetic this is <= 1 (0 <= P_k < I); larger values are float32 error.
+    - equation_residual: ||A phi_k - (eps - damping * dual)|| / ||eps||, the residual of
+      the identity A phi_k = eps - damping (T + damping)^-1 rhs (one extra jvp).
+    - carried_over_eps: ||A (beta phi_{k-1})|| / ||eps||, the size of the carried
+      momentum on this step's (fresh) walkers.
+    - gram_lam_max, gram_min_eig_preclip, gram_trace, gram_n_eig_below_damping.
+    - phi_norm, eps_norm, and the two kernel stats from _build_operators_with_stats.
 
     Args:
         log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
@@ -271,12 +310,12 @@ def get_same_sampled_spring_unified_step(
         params: P,
         positions: Array,
         state: SameSampledSPRINGUnifiedState,
-    ) -> Tuple[P, SameSampledSPRINGUnifiedState]:
+    ) -> Tuple:
         nchains = positions.shape[0]
         sqrt_n = jnp.sqrt(nchains)
         beta = state.beta
 
-        apply_A, apply_AT, tvals, tvecs = _build_operators(
+        apply_A, apply_AT, tvals, tvecs, kernel_stats = _build_operators_with_stats(
             kernel_fn, log_psi_apply, params, positions
         )
         tvals_clipped = jnp.maximum(tvals, 0.0)
@@ -291,7 +330,8 @@ def get_same_sampled_spring_unified_step(
 
         # ---- main SPRING (identical to base SPRING; beta is dynamic, from state) ----
         epsilon_bar = centered_local_energies / sqrt_n
-        rhs_main = epsilon_bar - apply_A(multiply_tree_by_scalar(state.phi, beta))
+        carried = apply_A(multiply_tree_by_scalar(state.phi, beta))
+        rhs_main = epsilon_bar - carried
         dual_main = solve(rhs_main, damping)
         step_primal = apply_AT(dual_main)
         phi_new = jax.tree_map(lambda s, ph: s + beta * ph, step_primal, state.phi)
@@ -357,7 +397,29 @@ def get_same_sampled_spring_unified_step(
             step=state.step + 1,
             r_ip=r_ip,
         )
-        return updates, new_state
+        if not return_diagnostics:
+            return updates, new_state
+
+        eps_norm = jnp.linalg.norm(epsilon_bar)
+        phi_prev_norm = jnp.sqrt(tree_inner_product(state.phi, state.phi))
+        phi_new_norm = jnp.sqrt(tree_inner_product(phi_new, phi_new))
+        bound = beta * phi_prev_norm + eps_norm / (2.0 * jnp.sqrt(damping))
+        residual = apply_A(phi_new) - (epsilon_bar - damping * dual_main)
+        diag = {
+            "diag_bound_ratio": phi_new_norm / bound,
+            "diag_equation_residual": jnp.linalg.norm(residual) / eps_norm,
+            "diag_carried_over_eps": jnp.linalg.norm(carried) / eps_norm,
+            "diag_phi_norm": phi_new_norm,
+            "diag_eps_norm": eps_norm,
+            "diag_gram_lam_max": jnp.max(tvals),
+            "diag_gram_min_eig_preclip": jnp.min(tvals),
+            "diag_gram_trace": jnp.sum(tvals),
+            "diag_gram_n_eig_below_damping": jnp.sum(tvals < damping).astype(
+                tvals.dtype
+            ),
+            **kernel_stats,
+        }
+        return updates, new_state, diag
 
     return step
 
@@ -378,6 +440,184 @@ def constrain_norm(grad: P, norm_constraint: chex.Numeric = 0.001) -> P:
     norm_scale_factor = jnp.sqrt(norm_constraint / sq_norm_scaled_grads)
     coefficient = jnp.minimum(norm_scale_factor, 1)
     return multiply_tree_by_scalar(grad, coefficient)
+
+
+class SafeguardState(NamedTuple):
+    """State of the optional detect-skip-rewind safeguard (Phase F step F3).
+
+    Attributes:
+        log_step_buffer: ring buffer (float[window]) of log pre-clip squared step
+            norms from accepted (non-triggered) steps.
+        n_logged: number of entries ever pushed into the buffer (int scalar).
+        last_trigger: step index of the most recent trigger (int scalar).
+        hold_until: beta is capped at `beta_cap` while step < hold_until (int scalar).
+        n_triggers: total triggers (skips + rewinds) so far (int scalar).
+        n_rewinds: total rewinds so far (int scalar).
+        snap_a_params, snap_b_params: two alternating parameter snapshots.
+        snap_a_z_probe, snap_b_z_probe: the probe iterate at those snapshots.
+        snap_a_step, snap_b_step: the step index at which each snapshot was taken.
+    """
+
+    log_step_buffer: Array
+    n_logged: Array
+    last_trigger: Array
+    hold_until: Array
+    n_triggers: Array
+    n_rewinds: Array
+    snap_a_params: PyTree
+    snap_b_params: PyTree
+    snap_a_z_probe: PyTree
+    snap_b_z_probe: PyTree
+    snap_a_step: Array
+    snap_b_step: Array
+
+
+class SafeguardedState(NamedTuple):
+    """Optimizer state when the safeguard is on: the unchanged core state + guard."""
+
+    core: SameSampledSPRINGUnifiedState
+    guard: SafeguardState
+
+
+class SafeguardConfig(NamedTuple):
+    """Static safeguard settings, read from the optimizer config."""
+
+    step_ratio: float  # trigger if pre-clip sq step > step_ratio * trailing median
+    bound_ratio: float  # trigger if diag_bound_ratio > bound_ratio
+    window: int  # trailing-median window (accepted steps)
+    min_fill: int  # trailing-median criterion is active once this many are logged
+    start_step: int  # no triggers before this step (init chaos)
+    rewind_within: int  # a second trigger within this many steps rewinds
+    snapshot_every: int  # snapshot interval; rewind target is 1-2 intervals old
+    beta_cap: float  # beta cap held after a rewind
+    hold_steps: int  # how long the cap is held
+
+
+def _tree_where(cond: Array, a: PyTree, b: PyTree) -> PyTree:
+    return jax.tree_util.tree_map(lambda x, y: jnp.where(cond, x, y), a, b)
+
+
+def _init_safeguard_state(
+    params: P, core: SameSampledSPRINGUnifiedState, window: int
+) -> SafeguardState:
+    """Fresh guard state; both snapshots start at the current params and step."""
+    int_zero = jnp.zeros((), jnp.int32)
+    return SafeguardState(
+        log_step_buffer=jnp.zeros((window,), jnp.float32),
+        n_logged=int_zero,
+        last_trigger=jnp.array(-(10**9), jnp.int32),
+        hold_until=jnp.array(-1, jnp.int32),
+        n_triggers=int_zero,
+        n_rewinds=int_zero,
+        snap_a_params=params,
+        snap_b_params=params,
+        snap_a_z_probe=core.z_probe,
+        snap_b_z_probe=core.z_probe,
+        snap_a_step=core.step.astype(jnp.int32),
+        snap_b_step=core.step.astype(jnp.int32),
+    )
+
+
+def _safeguarded_apply(
+    step_fn: Callable,
+    cfg: SafeguardConfig,
+    centered_local_energies: Array,
+    params: P,
+    positions: Array,
+    state: SafeguardedState,
+    constrain: bool,
+    norm_constraint: chex.Numeric,
+) -> Tuple[P, SafeguardedState, dict]:
+    """One SS-SPRING step behind the detect-skip-rewind safeguard (Phase F, F3).
+
+    Trigger (from `start_step` on): the pre-clip squared step exceeds `step_ratio` x
+    its trailing median over accepted steps, OR the exact-bound ratio exceeds
+    `bound_ratio`, OR either is non-finite. Both thresholds are dimensionless and,
+    at 3, never fired on any of the 17 surviving N2-4.0 runs (F1b).
+
+    - First trigger: SKIP. Parameters, momentum and probe are left as they were; only
+      the step counter advances (so the learning-rate schedule keeps moving).
+    - A second trigger within `rewind_within` steps: REWIND. Parameters and the probe
+      iterate go back to the older of two alternating snapshots (1-2 x
+      `snapshot_every` steps old), the momentum buffers are zeroed, and beta is capped
+      at `beta_cap` for `hold_steps` steps. Walkers are not rewound; MCMC
+      re-equilibrates them under the restored parameters.
+    """
+    core, guard = state.core, state.guard
+    step_idx = core.step.astype(jnp.int32)
+
+    holding = step_idx < guard.hold_until
+    beta_in = jnp.where(holding, jnp.minimum(core.beta, cfg.beta_cap), core.beta)
+    updates, new_core, diag = step_fn(
+        centered_local_energies, params, positions, core._replace(beta=beta_in)
+    )
+    opt_metrics = get_update_norm_diagnostics(updates, constrain, norm_constraint)
+    preclip = opt_metrics["update_sq_norm_preclip"]
+    if constrain:
+        applied = constrain_norm(updates, norm_constraint)
+    else:
+        applied = updates
+    params_normal = optax.apply_updates(params, applied)
+
+    # trailing median over the filled part of the ring buffer
+    filled = jnp.arange(cfg.window) < guard.n_logged
+    med = jnp.exp(jnp.nanmedian(jnp.where(filled, guard.log_step_buffer, jnp.nan)))
+    enough = guard.n_logged >= cfg.min_fill
+    finite = jnp.isfinite(preclip) & jnp.isfinite(diag["diag_bound_ratio"])
+    trig_step = enough & (preclip > cfg.step_ratio * med)
+    trig_bound = diag["diag_bound_ratio"] > cfg.bound_ratio
+    trig = (step_idx >= cfg.start_step) & (~finite | trig_step | trig_bound)
+    rewind = trig & (step_idx - guard.last_trigger <= cfg.rewind_within)
+    skip = trig & ~rewind
+
+    a_older = guard.snap_a_step <= guard.snap_b_step
+    old_params = _tree_where(a_older, guard.snap_a_params, guard.snap_b_params)
+    old_z_probe = _tree_where(a_older, guard.snap_a_z_probe, guard.snap_b_z_probe)
+
+    params_out = _tree_where(
+        rewind, old_params, _tree_where(skip, params, params_normal)
+    )
+
+    advanced_old = core._replace(step=core.step + 1)
+    zeros = jax.tree_util.tree_map(jnp.zeros_like, core.phi)
+    rewound = advanced_old._replace(phi=zeros, phi_probe=zeros, z_probe=old_z_probe)
+    core_out = _tree_where(rewind, rewound, _tree_where(skip, advanced_old, new_core))
+
+    # snapshots: on accepted steps every `snapshot_every`, overwrite the older slot
+    take = (~trig) & (step_idx % cfg.snapshot_every == 0)
+    write_a = take & a_older
+    write_b = take & ~a_older
+    slot = guard.n_logged % cfg.window
+    new_guard = SafeguardState(
+        log_step_buffer=jnp.where(
+            trig,
+            guard.log_step_buffer,
+            guard.log_step_buffer.at[slot].set(jnp.log(preclip).astype(jnp.float32)),
+        ),
+        n_logged=guard.n_logged + (~trig).astype(jnp.int32),
+        last_trigger=jnp.where(trig, step_idx, guard.last_trigger),
+        hold_until=jnp.where(rewind, step_idx + cfg.hold_steps, guard.hold_until),
+        n_triggers=guard.n_triggers + trig.astype(jnp.int32),
+        n_rewinds=guard.n_rewinds + rewind.astype(jnp.int32),
+        snap_a_params=_tree_where(write_a, params, guard.snap_a_params),
+        snap_b_params=_tree_where(write_b, params, guard.snap_b_params),
+        snap_a_z_probe=_tree_where(write_a, core.z_probe, guard.snap_a_z_probe),
+        snap_b_z_probe=_tree_where(write_b, core.z_probe, guard.snap_b_z_probe),
+        snap_a_step=jnp.where(write_a, step_idx, guard.snap_a_step),
+        snap_b_step=jnp.where(write_b, step_idx, guard.snap_b_step),
+    )
+    opt_metrics.update(diag)
+    opt_metrics.update(
+        {
+            "sg_trigger": trig.astype(jnp.float32),
+            "sg_rewind": rewind.astype(jnp.float32),
+            "sg_n_triggers": new_guard.n_triggers.astype(jnp.float32),
+            "sg_n_rewinds": new_guard.n_rewinds.astype(jnp.float32),
+            "sg_step_median": med,
+            "sg_beta_used": beta_in,
+        }
+    )
+    return params_out, SafeguardedState(core_out, new_guard), opt_metrics
 
 
 def construct_same_sampled_spring_unified_update_param_fn(
@@ -430,12 +670,17 @@ def construct_same_sampled_spring_unified_update_param_fn(
         # probe_res_norm is the current step's probe residual (last buffer slot);
         # probe_r_ip is the raw pre-clip window ratio (> 1 == growing residual,
         # the precursor of the beta-locks-toward-1 failure mode).
+        core = (
+            optimizer_state.core
+            if isinstance(optimizer_state, SafeguardedState)
+            else optimizer_state
+        )
         metrics.update(
             {
-                "mu": optimizer_state.beta,
-                "r_hat": optimizer_state.r_hat,
-                "probe_res_norm": optimizer_state.residual_buffer[-1],
-                "probe_r_ip": optimizer_state.r_ip,
+                "mu": core.beta,
+                "r_hat": core.r_hat,
+                "probe_res_norm": core.residual_buffer[-1],
+                "probe_r_ip": core.r_ip,
             }
         )
         metrics.update(opt_metrics)
@@ -497,6 +742,22 @@ def initialize_same_sampled_spring_unified(
         else float(optimizer_config.probe_lr)
     )
 
+    # Phase F options (2026-10). Read with .get so configs written before they existed
+    # still load; both default to off, which leaves the update path unchanged.
+    diagnostics = bool(optimizer_config.get("diagnostics", False))
+    safeguard = bool(optimizer_config.get("safeguard", False))
+    sg_cfg = SafeguardConfig(
+        step_ratio=float(optimizer_config.get("safeguard_step_ratio", 3.0)),
+        bound_ratio=float(optimizer_config.get("safeguard_bound_ratio", 3.0)),
+        window=int(optimizer_config.get("safeguard_window", 500)),
+        min_fill=int(optimizer_config.get("safeguard_min_fill", 100)),
+        start_step=int(optimizer_config.get("safeguard_start_step", 1000)),
+        rewind_within=int(optimizer_config.get("safeguard_rewind_within", 100)),
+        snapshot_every=int(optimizer_config.get("safeguard_snapshot_every", 250)),
+        beta_cap=float(optimizer_config.get("safeguard_beta_cap", 0.99)),
+        hold_steps=int(optimizer_config.get("safeguard_hold_steps", 2000)),
+    )
+
     step_fn = get_same_sampled_spring_unified_step(
         log_psi_apply,
         learning_rate_schedule,
@@ -506,6 +767,7 @@ def initialize_same_sampled_spring_unified(
         probe_lr,
         bool(optimizer_config.adaptive_eta),
         bool(optimizer_config.adaptive_probe),
+        return_diagnostics=diagnostics or safeguard,
     )
 
     def init_state(local_params: P, subkey: PRNGKey) -> SameSampledSPRINGUnifiedState:
@@ -526,14 +788,39 @@ def initialize_same_sampled_spring_unified(
     def optimizer_apply(energy, local_energies, params, optimizer_state, data):
         positions = get_position_fn(data)
         centered_local_energies = local_energies - energy
-        updates, optimizer_state = step_fn(
-            centered_local_energies, params, positions, optimizer_state
-        )
+        if safeguard:
+            # A plain core state (fresh, or reloaded from a checkpoint written without
+            # the safeguard) is upgraded on the first traced call; jit retraces once.
+            if isinstance(optimizer_state, SameSampledSPRINGUnifiedState):
+                optimizer_state = SafeguardedState(
+                    optimizer_state,
+                    _init_safeguard_state(params, optimizer_state, sg_cfg.window),
+                )
+            return _safeguarded_apply(
+                step_fn,
+                sg_cfg,
+                centered_local_energies,
+                params,
+                positions,
+                optimizer_state,
+                bool(optimizer_config.constrain_norm),
+                optimizer_config.norm_constraint,
+            )
+        if diagnostics:
+            updates, optimizer_state, diag = step_fn(
+                centered_local_energies, params, positions, optimizer_state
+            )
+        else:
+            updates, optimizer_state = step_fn(
+                centered_local_energies, params, positions, optimizer_state
+            )
         opt_metrics = get_update_norm_diagnostics(
             updates,
             optimizer_config.constrain_norm,
             optimizer_config.norm_constraint,
         )
+        if diagnostics:
+            opt_metrics.update(diag)
         if optimizer_config.constrain_norm:
             updates = constrain_norm(updates, optimizer_config.norm_constraint)
         params = optax.apply_updates(params, updates)

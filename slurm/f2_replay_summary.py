@@ -1,0 +1,146 @@
+"""Read out the Phase F F2/F3 replays (slurm/f2_n2_replay.sbatch).
+
+For each replay logdir under LOGROOT it prints:
+  1. Reproduction check: max |E_replay - E_original| over epochs 10000-10500. If the
+     safeguard-off arm does not track the original closely, the diagnostics changed the
+     float32 rounding and the trajectory wandered -- read event timings, not epochs.
+  2. Outcome: last epoch reached, first catastrophe (same detector as
+     n2_failure_anatomy.py), and the mean noclip energy of the last 500 epochs, with the
+     original run's level over 9500-10000 for comparison.
+  3. Safeguard: number of triggers / rewinds and the rows at which they fired.
+  Rows are line numbers in the replay logdir's .txt files, which equal epochs to
+  within one (reload.append copies the history and the replay re-logs the checkpoint
+  epoch); the reproduction check reports the shift.
+  4. Onset anatomy (safeguard-off arms): every logged quantity, epoch by epoch, over the
+     30 epochs before the first catastrophe -- which one moves first.
+
+Usage (Savio login node, after the array finishes):
+    python slurm/f2_replay_summary.py
+    python slurm/f2_replay_summary.py --logroot /path/to/phase_f/f2_replay
+"""
+
+import argparse
+import glob
+import os
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(__file__))
+from n2_failure_anatomy import EVENT_DE, EVENT_VAR, trailing_median  # noqa: E402
+
+USER = os.environ.get("USER", "")
+DEFAULT_ROOT = f"/global/scratch/users/{USER}/vmcnet_logs/phase_f/f2_replay"
+PHASE_E = f"/global/scratch/users/{USER}/vmcnet_logs/phase_e"
+ORIGINALS = {
+    "e14s1": f"{PHASE_E}/e14_n2_stretched_100k/e14_N2_4.0_ssu_defaults_s1",
+    "e18s2": f"{PHASE_E}/e18_n2_stretched_eta0015/e18_N2_4.0_ssu_defaults_eta0.0015_s2",
+}
+ONSET_KEYS = [
+    "energy_noclip",
+    "variance_noclip",
+    "update_sq_norm_preclip",
+    "probe_r_ip",
+    "diag_bound_ratio",
+    "diag_equation_residual",
+    "diag_carried_over_eps",
+    "diag_gram_lam_max",
+    "diag_gram_min_eig_preclip",
+    "diag_walker_rownorm_max_over_median",
+    "diag_mean_jac_sq_over_trace",
+]
+
+
+def load(logdir, key, pad=0):
+    """Metric as a row-indexed array. diag_*/sg_* files exist only for the replay, so
+    they are front-padded with `pad` NaNs to line up with the appended history."""
+    path = os.path.join(logdir, key + ".txt")
+    if not os.path.exists(path):
+        return None
+    x = np.atleast_1d(np.loadtxt(path))
+    if key.startswith(("diag_", "sg_")):
+        x = np.concatenate([np.full(pad, np.nan), x])
+    return x
+
+
+def first_event(e, v, start):
+    """First epoch >= start where E > trailing median + 1 Ha and var > 20x median."""
+    em, vm = trailing_median(e[::10], 50), trailing_median(v[::10], 50)
+    idx = np.nonzero((e[::10] > em + EVENT_DE) & (v[::10] > EVENT_VAR * vm))[0]
+    idx = idx[idx * 10 >= start]
+    return int(idx[0] * 10) if len(idx) else None
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--logroot", default=DEFAULT_ROOT)
+    args = ap.parse_args()
+
+    for d in sorted(glob.glob(os.path.join(args.logroot, "f2_*"))):
+        name = os.path.basename(d)
+        tag = "e14s1" if "e14s1" in name else "e18s2"
+        e, v = load(d, "energy_noclip"), load(d, "variance_noclip")
+        orig_e = load(ORIGINALS[tag], "energy_noclip")
+        # a file only the replay writes: sg_* (safeguard on) or diag_* (originals ran
+        # without diagnostics)
+        new = load(d, "sg_trigger")
+        if new is None:
+            new = load(d, "diag_bound_ratio")
+        print(f"\n=== {name}  (original: {ORIGINALS[tag]})")
+        if e is None or new is None:
+            print("  no replay epochs logged yet")
+            continue
+        # reload.append copies the original history and the replay re-logs from the
+        # checkpoint epoch, so line index = epoch only to within one; find the shift.
+        start = len(e) - len(new)
+        last = len(e) - 1
+        seg = e[start : start + 500]
+        devs = {}
+        for off in (-1, 0, 1):
+            ref = orig_e[max(0, start + off) :]
+            n = min(len(seg), len(ref))
+            if n > 0:
+                devs[off] = (np.nanmax(np.abs(seg[:n] - ref[:n])), n)
+        if not devs:
+            print("  reproduction: no overlap with the original file")
+            off = 0
+            devs[0] = (np.nan, 0)
+        off = min(devs, key=lambda k: devs[k][0])
+        print(
+            f"  reproduction: max |E - E_orig| over the first {devs[off][1]} replay rows: "
+            f"{devs[off][0]:.2e} Ha (row shift {off:+d} vs the original file)"
+        )
+        ev = first_event(e, v, start)
+        tail = np.nanmean(e[max(start, last - 500) : last + 1])
+        before = np.nanmean(orig_e[start - 500 : start])
+        print(
+            f"  last epoch {last}; first catastrophe {ev}; mean E last 500 {tail:.4f} "
+            f"(original, 500 rows before the replay: {before:.4f})"
+        )
+
+        trig, rew = load(d, "sg_trigger", start), load(d, "sg_rewind", start)
+        if trig is not None:
+            t_ep = np.nonzero(trig > 0)[0]
+            r_ep = np.nonzero(rew > 0)[0]
+            print(
+                f"  safeguard: {len(t_ep)} triggers at {t_ep[:20].tolist()}"
+                f"{' ...' if len(t_ep) > 20 else ''}; {len(r_ep)} rewinds at "
+                f"{r_ep[:20].tolist()}"
+            )
+        elif ev is not None:
+            cols = {k: load(d, k, start) for k in ONSET_KEYS}
+            cols = {k: x for k, x in cols.items() if x is not None}
+            short = {
+                k: k.replace("diag_", "").replace("update_sq_norm_", "")[:12]
+                for k in cols
+            }
+            print("  onset anatomy, epochs", ev - 30, "to", ev + 2)
+            print("  " + f"{'epoch':>6}" + "".join(f"{short[k]:>13}" for k in cols))
+            for ep in range(max(start, ev - 30), min(last, ev + 2) + 1):
+                print(
+                    "  " + f"{ep:>6}" + "".join(f"{cols[k][ep]:>13.4g}" for k in cols)
+                )
+
+
+if __name__ == "__main__":
+    main()

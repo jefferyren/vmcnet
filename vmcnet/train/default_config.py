@@ -340,6 +340,21 @@ def get_default_vmc_config() -> Dict:
                 "probe_damping": 1e-3,
                 "adaptive_eta": False,  # eta_main = 1 - beta*(1 - lr(step))
                 "adaptive_probe": False,  # probe uses eta_main instead of probe_lr
+                # Phase F (docs/CAMPAIGN_LOG.md). Both off = unchanged update path.
+                # diagnostics: log diag_* metrics of the main solve (bound ratio,
+                # equation residual, Gram spectrum, walker row-norm tail, ...).
+                "diagnostics": False,
+                # safeguard: detect -> skip -> (repeat) rewind + momentum reset.
+                "safeguard": False,
+                "safeguard_step_ratio": 3.0,  # pre-clip step vs trailing median
+                "safeguard_bound_ratio": 3.0,  # diag_bound_ratio threshold
+                "safeguard_window": 500,  # trailing-median window (accepted steps)
+                "safeguard_min_fill": 100,  # entries before the median test is live
+                "safeguard_start_step": 1000,  # no triggers during init chaos
+                "safeguard_rewind_within": 100,  # 2nd trigger within -> rewind
+                "safeguard_snapshot_every": 250,  # rewind target 250-500 steps old
+                "safeguard_beta_cap": 0.99,  # beta cap held after a rewind
+                "safeguard_hold_steps": 2000,
             },
             "prime_sr": {
                 # Learning rate settings

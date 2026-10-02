@@ -98,7 +98,9 @@ def load_wandb(cache):
             if rows:
                 break
         arr = {
-            k: np.array([np.nan if row.get(k) is None else row[k] for row in rows], float)
+            k: np.array(
+                [np.nan if row.get(k) is None else row[k] for row in rows], float
+            )
             for k in keys
         }
         arr["step"] = arr.pop("_step")
@@ -206,10 +208,14 @@ def main():
 
     runs = load_logdirs(args.logdirs) if args.logdirs else load_wandb(args.cache)
 
-    print(f"\n{len(runs)} runs. Bound ratio = ||phi_k|| / exact-arithmetic bound "
-          "(<= 1 always, for exact SPRING).\n")
-    hdr = (f"{'run':<42}{'arm':<20}{'1st event':>10}{'last step':>10}"
-           f"{'max ratio healthy':>18}{'first >1':>9}{'at event':>10}{'max after':>11}")
+    print(
+        f"\n{len(runs)} runs. Bound ratio = ||phi_k|| / exact-arithmetic bound "
+        "(<= 1 always, for exact SPRING).\n"
+    )
+    hdr = (
+        f"{'run':<42}{'arm':<20}{'1st event':>10}{'last step':>10}"
+        f"{'max ratio healthy':>18}{'first >1':>9}{'at event':>10}{'max after':>11}"
+    )
     print(hdr)
     survivors_trig, survivor_steps, healthy_ratios = 0, 0, []
     leads_trig, leads_rip, healthy_rip = [], [], []
@@ -225,7 +231,11 @@ def main():
         last = int(full["step"][-1])
         survived = last >= COMPLETE_STEP and i_ev is None
         lo = np.searchsorted(full["step"], 1000)
-        hi = np.searchsorted(full["step"], s[i_ev]) if i_ev is not None else len(full["step"])
+        hi = (
+            np.searchsorted(full["step"], s[i_ev])
+            if i_ev is not None
+            else len(full["step"])
+        )
         healthy = ratio_full[lo:hi]
         over = np.nonzero(healthy > 1)[0]
         first_over = int(full["step"][lo + over[0]]) if len(over) else None
@@ -236,9 +246,11 @@ def main():
             tail = ratio_full[j_ev:]
             fin = tail[np.isfinite(tail)]
             after = fin.max() if len(fin) else np.inf
-        print(f"{name:<42}{arm_of(name):<20}{(int(s[i_ev]) if i_ev is not None else '-'):>10}"
-              f"{last:>10}{np.nanmax(healthy):>18.3g}{(first_over or '-'):>9}"
-              f"{at_ev:>10.3g}{after:>11.3g}")
+        print(
+            f"{name:<42}{arm_of(name):<20}{(int(s[i_ev]) if i_ev is not None else '-'):>10}"
+            f"{last:>10}{np.nanmax(healthy):>18.3g}{(first_over or '-'):>9}"
+            f"{at_ev:>10.3g}{after:>11.3g}"
+        )
         if survived:
             healthy_ratios.append(np.nanmax(healthy))
         cells = []
@@ -263,28 +275,43 @@ def main():
             if i_ev is not None:
                 win = [j for j in range(max(0, i_ev - 30), i_ev + 1) if r[j] > 2]
                 leads_rip.append((name, int(s[i_ev] - s[win[0]]) if win else None))
-                healthy_rip.append(r[np.searchsorted(s, 2000): max(0, i_ev - 50)])
+                healthy_rip.append(r[np.searchsorted(s, 2000) : max(0, i_ev - 50)])
             elif survived:
-                healthy_rip.append(r[np.searchsorted(s, 2000):])
+                healthy_rip.append(r[np.searchsorted(s, 2000) :])
 
-    print("\nBound ratio per threshold, before the first event (from step 1000): first step "
-          "above it (number of steps above it). 1st event 'NaN' = no sharp event but diverged.")
-    print(f"{'run':<42}{'1st event':>10}  " + "  ".join(f"{'> ' + str(t):>16}" for t in BOUND_THRESHOLDS))
+    print(
+        "\nBound ratio per threshold, before the first event (from step 1000): first step "
+        "above it (number of steps above it). 1st event 'NaN' = no sharp event but diverged."
+    )
+    print(
+        f"{'run':<42}{'1st event':>10}  "
+        + "  ".join(f"{'> ' + str(t):>16}" for t in BOUND_THRESHOLDS)
+    )
     for row in thresh_rows:
         print(row)
     if healthy_ratios:
-        print(f"\nSurvivors: max healthy bound ratio {max(healthy_ratios):.3g} "
-              f"(median over runs {np.median(healthy_ratios):.3g}).")
-    print(f"Trigger 'pre-clip step > {TRIGGER:g}x trailing {WINDOW_STEPS}-step median': "
-          f"{survivors_trig} alarm episodes in {survivor_steps / 1e6:.2f}M survivor steps.")
-    print("  steps between first alarm and the first event (0 = fires at the event row):")
+        print(
+            f"\nSurvivors: max healthy bound ratio {max(healthy_ratios):.3g} "
+            f"(median over runs {np.median(healthy_ratios):.3g})."
+        )
+    print(
+        f"Trigger 'pre-clip step > {TRIGGER:g}x trailing {WINDOW_STEPS}-step median': "
+        f"{survivors_trig} alarm episodes in {survivor_steps / 1e6:.2f}M survivor steps."
+    )
+    print(
+        "  steps between first alarm and the first event (0 = fires at the event row):"
+    )
     for name, lead in leads_trig:
         print(f"    {name:<42} {lead}")
     if leads_rip:
         h = np.concatenate([x[np.isfinite(x)] for x in healthy_rip])
-        print(f"Probe r_ip, healthy: median {np.median(h):.3f}, p99 {np.percentile(h, 99):.3f}, "
-              f"p99.9 {np.percentile(h, 99.9):.3f}")
-        print("  steps before the first event at which r_ip first exceeds 2 (0 = only at it):")
+        print(
+            f"Probe r_ip, healthy: median {np.median(h):.3f}, p99 {np.percentile(h, 99):.3f}, "
+            f"p99.9 {np.percentile(h, 99.9):.3f}"
+        )
+        print(
+            "  steps before the first event at which r_ip first exceeds 2 (0 = only at it):"
+        )
         for name, lead in leads_rip:
             print(f"    {name:<42} {lead}")
     spike_response(runs)
@@ -314,8 +341,10 @@ def spike_response(runs, horizon_steps=600, spike=10.0):
         for i in kept:
             if um[i] > 0 and i + hz < len(u):
                 by_arm.setdefault(arm_of(name), []).append(u[i : i + hz + 1] / um[i])
-    print(f"\nPre-clip step / trailing median after unclipped-variance spikes (>{spike:g}x),"
-          " healthy stretches; median over spikes at +0/+50/+200/+600 steps:")
+    print(
+        f"\nPre-clip step / trailing median after unclipped-variance spikes (>{spike:g}x),"
+        " healthy stretches; median over spikes at +0/+50/+200/+600 steps:"
+    )
     for a, lst in sorted(by_arm.items()):
         m = np.nanmedian(np.array(lst), axis=0)
         idx = [0, 50 // dt, 200 // dt, len(m) - 1]

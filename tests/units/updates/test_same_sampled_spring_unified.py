@@ -495,3 +495,139 @@ def test_parse_optimizer_config_dispatches_new_type():
     src = inspect.getsource(poc.initialize_optimizer)
     assert "same_sampled_spring_unified" in src
     assert hasattr(poc, "initialize_same_sampled_spring_unified")
+
+
+# ---- Phase F: diagnostics and safeguard (docs/CAMPAIGN_LOG.md, steps F2/F3) ----
+
+
+def _phase_f_config(**overrides):
+    cfg = _config()
+    cfg.update(overrides)
+    return cfg
+
+
+def _init_update_fn(cfg, nchains=8):
+    params, positions, _ = _operator_setup(nchains=nchains)
+    update_param_fn, opt_state, key = initialize_same_sampled_spring_unified(
+        _log_psi_apply,
+        _energy_and_statistics_fn,
+        params,
+        get_position_fn=lambda d: d,
+        update_data_fn=lambda d, p_: d,
+        learning_rate_schedule=lambda t: 0.05,
+        optimizer_config=cfg,
+        key=jax.random.PRNGKey(0),
+        record_param_l1_norm=False,
+        apply_pmap=False,
+    )
+    return update_param_fn, opt_state, key, params, positions
+
+
+def test_step_diagnostics_do_not_change_the_step():
+    """return_diagnostics=True returns the same updates/state plus sane diagnostics."""
+    params, positions, _ = _operator_setup(nchains=9)
+    kwargs = dict(
+        damping=1e-3,
+        probe_damping=1e-3,
+        p=4,
+        probe_lr=0.05,
+        adaptive_eta=False,
+        adaptive_probe=False,
+    )
+    plain = get_same_sampled_spring_unified_step(
+        _log_psi_apply, lambda t: 0.05, **kwargs
+    )
+    with_diag = get_same_sampled_spring_unified_step(
+        _log_psi_apply, lambda t: 0.05, return_diagnostics=True, **kwargs
+    )
+    phi = jax.tree_map(
+        lambda x: 0.1 * jax.random.normal(jax.random.PRNGKey(3), x.shape), params
+    )
+    state = _make_state(params, p=4, beta=0.99, phi=phi)
+    centered = jax.random.normal(jax.random.PRNGKey(4), (positions.shape[0],))
+    centered = centered - jnp.mean(centered)
+
+    u1, s1 = plain(centered, params, positions, state)
+    u2, s2, diag = with_diag(centered, params, positions, state)
+    for a, b in zip(
+        jax.tree_util.tree_leaves((u1, s1)), jax.tree_util.tree_leaves((u2, s2))
+    ):
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-7)
+    for k, v in diag.items():
+        assert k.startswith("diag_") and bool(jnp.isfinite(v)), k
+    # exact arithmetic: bound ratio <= 1 and the defining identity holds
+    assert float(diag["diag_bound_ratio"]) <= 1.0 + 1e-3
+    assert float(diag["diag_equation_residual"]) < 1e-3
+
+
+def test_initialize_with_diagnostics_logs_diag_metrics_and_keeps_state_type():
+    """diagnostics=True adds diag_* metrics and leaves the state type unchanged."""
+    update_param_fn, opt_state, key, params, positions = _init_update_fn(
+        _phase_f_config(diagnostics=True)
+    )
+    _, _, new_state, metrics, _ = update_param_fn(params, positions, opt_state, key)
+    assert isinstance(new_state, SameSampledSPRINGUnifiedState)
+    assert "diag_bound_ratio" in metrics and "diag_gram_lam_max" in metrics
+    assert "sg_trigger" not in metrics
+
+
+def test_safeguard_that_never_fires_matches_the_unguarded_run():
+    """With unreachable thresholds the safeguard must not change the trajectory."""
+    common = dict(diagnostics=True)
+    guarded = _phase_f_config(
+        safeguard=True,
+        safeguard_step_ratio=1e30,
+        safeguard_bound_ratio=1e30,
+        safeguard_start_step=0,
+        **common,
+    )
+    fn_a, st_a, key, params, positions = _init_update_fn(_phase_f_config(**common))
+    fn_b, st_b, _, _, _ = _init_update_fn(guarded)
+    p_a, p_b = params, params
+    for _ in range(3):
+        p_a, _, st_a, _, _ = fn_a(p_a, positions, st_a, key)
+        p_b, _, st_b, m_b, _ = fn_b(p_b, positions, st_b, key)
+        assert float(m_b["sg_trigger"]) == 0.0
+    for a, b in zip(jax.tree_util.tree_leaves(p_a), jax.tree_util.tree_leaves(p_b)):
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-7)
+    from vmcnet.updates.same_sampled_spring_unified import SafeguardedState
+
+    assert isinstance(st_b, SafeguardedState)
+    assert int(st_b.core.step) == 3 and int(st_b.guard.n_logged) == 3
+
+
+def test_safeguard_skips_then_rewinds_and_resets_momentum():
+    """First trigger skips the step; a second within the window rewinds."""
+    from vmcnet.updates.same_sampled_spring_unified import SafeguardedState
+
+    cfg = _phase_f_config(
+        safeguard=True,
+        safeguard_bound_ratio=-1.0,  # always fires
+        safeguard_start_step=0,
+        safeguard_rewind_within=100,
+        safeguard_hold_steps=50,
+        mu=0.995,
+    )
+    fn, state, key, params, positions = _init_update_fn(cfg)
+
+    # step 0: skip -> params unchanged, counter advanced, one trigger, no rewind
+    p1, _, s1, m1, _ = fn(params, positions, state, key)
+    assert isinstance(s1, SafeguardedState)
+    for a, b in zip(jax.tree_util.tree_leaves(p1), jax.tree_util.tree_leaves(params)):
+        np.testing.assert_array_equal(a, b)
+    assert float(m1["sg_trigger"]) == 1.0 and float(m1["sg_rewind"]) == 0.0
+    assert int(s1.core.step) == 1 and int(s1.guard.n_triggers) == 1
+
+    # perturb params so a rewind is observable, then trigger again at step 1
+    moved = jax.tree_map(lambda x: x + 1.0, p1)
+    p2, _, s2, m2, _ = fn(moved, positions, s1, key)
+    assert float(m2["sg_rewind"]) == 1.0
+    for a, b in zip(jax.tree_util.tree_leaves(p2), jax.tree_util.tree_leaves(params)):
+        np.testing.assert_allclose(a, b)  # back at the snapshot (the start)
+    for leaf in jax.tree_util.tree_leaves((s2.core.phi, s2.core.phi_probe)):
+        assert bool(jnp.all(leaf == 0.0))
+    assert int(s2.guard.n_rewinds) == 1 and int(s2.guard.hold_until) == 1 + 50
+
+    # during the hold, the beta actually used is capped at 0.99
+    _, _, _, m3, _ = fn(p2, positions, s2, key)
+    assert float(m3["sg_beta_used"]) <= 0.99 + 1e-7

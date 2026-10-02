@@ -762,8 +762,75 @@ bound as a clean signal is dead.**
   first event); the r_ip leads; the local-energy-spike null.
 - **Checkpoints confirmed:** `10000.npz` exists for both E14 s1 and E18 s2.
 
-**Revised next step (F1b, zero GPU):** rerun the updated script on the same logdirs and
-read the per-threshold table.
+**F1b RESULT (run 2026-10-01, same logdirs). The bound is a clean *detector* at T=3 but
+not a *precursor*.**
+- **Survivors:** no survivor ever exceeds 3. Only one exceeds 2: E17 eta=1e-3 s0, for one
+  step.
+- **Diverged runs that cross 3 (9 of 15):** E14 s0/s1/s2, E15 s3/s6/s7, E16 s2, E19 C=1e-2
+  s0/s2. All cross only **2–11 steps before the first event**. Event steps come from
+  10-step rows, so in practice the crossing is the event onset.
+- **Diverged runs that never cross 3:** E16 s1 (max 2.68), E19 C=1e-2 s1, and all three
+  no-cap runs.
+- **E16 s2 is the one early excursion** — a single step above 2 at 15,438, 23k steps
+  before its event.
+- **E18 s2 fails slowly.** It has no sharp event; it sits above 1 for **1,673 steps** from
+  step 7,366 onward. For comparison, the most any survivor spends above 1 is 24 steps (E15
+  s5), and E14 s0 spends 81. Bound violations are therefore a precursor only for this
+  slow-failure mode, on one run.
+- **Reading.**
+  - The float32 solve breaks down *at* the catastrophe (5–85× the bound), on top of a
+    low-level excess that is always present (≤2.2× in healthy runs).
+  - This resolution cannot say whether the breakdown starts the catastrophe or amplifies
+    it. Both happen within ~10 steps.
+  - The pre-clip trigger is equally clean and equally late, so the bound adds no warning
+    time.
+- **Plan change.**
+  - **F2 becomes logging only.** Keep the equation residual, Gram λ_max and min eigenvalue
+    before clipping, the per-walker ‖O_i‖ tail, ‖Ō‖²/tr(T), and electrons per atom.
+    Together they show what spikes first inside the ~10-step onset.
+  - **The safeguard is F3** (skip, then rewind and reset). Trigger: pre-clip step > 3×
+    trailing median, OR bound ratio > 3. Both are clean on all 17 survivors.
+  - **Prevention needs F4/F5,** not an early-warning brake.
+  - **First GPU experiment:** replay E14 s1 and E18 s2 from `checkpoints/10000.npz` to
+    ~16k with the F2 logging. Run once with F3 off, to get per-step anatomy of the onset,
+    and once with F3 on, to see whether the run recovers instead of reaching NaN.
+
+**F2/F3 IMPLEMENTED (2026-10-01), NOT YET RUN.**
+- **Code:** `same_sampled_spring_unified.py` gains two config flags, both off by default.
+  The default path is unchanged, and all 57 `tests/units/updates` tests pass, 4 of them
+  new.
+  - **`diagnostics`** logs `diag_*` every epoch: the bound ratio, the equation residual
+    (one extra jvp), carried-momentum/‖ε̄‖, Gram λ_max/trace/min eigenvalue before
+    clipping/count below the damping, walker row-norm max/median, and
+    ‖Ō‖²/tr(T).
+  - **`safeguard`** implements F3 with the calibrated triggers (pre-clip step > 3×
+    trailing 500-step median, or bound ratio > 3, or non-finite; from step 1000).
+    - A first trigger skips the step.
+    - A second trigger within 100 steps rewinds parameters and the probe to the older of
+      two snapshots taken every 250 steps, zeroes the momentum, and caps β at 0.99 for
+      2000 steps. Walkers are not rewound.
+    - It logs `sg_*`. Every threshold is in `default_config.py` as a
+      `safeguard_*` key.
+  - The guard state attaches to the optimizer state on the first step, so it works
+    from checkpoints written without it.
+  - A CPU smoke test passed: a reload with `use_config_file=False` and the safeguard on
+    reproduced the original energies exactly while the guard never fired.
+- **Run:** `slurm/f2_n2_replay.sbatch` (array 0-3) replays E14 s1 and E18 s2 from
+  `checkpoints/10000.npz` to 20k, safeguard off and on, with diagnostics on in all four.
+  The original launch flags are rebuilt (preset + CLI), because a reloaded config.json
+  is locked and cannot take the new keys. About 6–8 GPU-h at most.
+- **Readout:** `python slurm/f2_replay_summary.py`. It prints, per arm:
+  - a reproduction check against the original;
+  - the outcome;
+  - trigger and rewind rows;
+  - for safeguard-off arms, every logged quantity over the 30 epochs before the
+    catastrophe.
+
+  Row numbers equal epochs to within one, because `reload.append` re-logs the
+  checkpoint epoch.
+
+**F1b instructions, as originally written:** rerun the updated script on the same
+logdirs and read the per-threshold table.
 - **Survivors never cross some threshold T while diverged runs cross it well before
   their event:** F2's guard keys on ratio > T.
 - **Otherwise:** drop the bound as a trigger, use the pre-clip-ratio trigger (F3)
@@ -1184,6 +1251,13 @@ Two more found while writing the E9/E11 reports:
   It reads wandb history by default, or per-epoch logdir `.txt` files with `--logdirs`
   (Phase F step F1). The wandb mode has been run. The `--logdirs` mode has only been
   checked on a synthetic logdir.
+- **Phase F F2/F3 (2026-10-01):**
+  - `diagnostics` and `safeguard` options in
+    `vmcnet/updates/same_sampled_spring_unified.py`, both default off. Their keys are in
+    `default_config.py`, and the tests are in
+    `tests/units/updates/test_same_sampled_spring_unified.py`.
+  - `slurm/f2_n2_replay.sbatch` is the checkpoint replay of E14 s1 and E18 s2.
+  - `slurm/f2_replay_summary.py` is its readout.
 
 ## 9. How to keep this document current
 
@@ -1224,7 +1298,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). Next action: F1b** — re-run the updated script on Savio. Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). Next action: `sbatch slurm/f2_n2_replay.sbatch`, then `python slurm/f2_replay_summary.py`.** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue
