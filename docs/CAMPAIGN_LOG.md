@@ -672,7 +672,10 @@ These were read from existing wandb history, which is sampled every 10th step. S
     event 10,590, NaN 17,340. E16 s1: 41,450 → 97,240.
   - `divergence_check.py`'s "healthy until" therefore marks the *second* event. Any fix
     has to prevent or undo the first.
-- **After the first event the momentum buffer exceeds what SPRING can produce.**
+- **⚠ Largely overturned by F1 (2026-10-01; see F1 below). Kept for the record.** At
+  per-epoch resolution, survivors exceed the bound too (up to 2.2×), and the post-event
+  10⁵–10¹²× figures were artifacts of the 10-step sampling. The original reading was:
+  **after the first event the momentum buffer exceeds what SPRING can produce.**
   - In exact arithmetic ‖φ_k‖ ≤ β‖φ_{k−1}‖ + ‖ε̄_k‖/(2√λ), because 0 ≼ P_k ≺ I.
   - All 17 surviving runs stay below 0.95 of this bound (median 0.24).
   - Every *capped* diverged run exceeds it after its first event, by 30× to 10¹²×.
@@ -733,6 +736,39 @@ chain it over 10-step gaps. Read three things:
   - Only after: numerics is stage 2 only. F2 rescues runs, but stage 1 needs F4–F5.
 - **(c) Checkpoints for F2:** confirm `checkpoints/10000.npz` exists in the E14 s1 and
   E18 s2 logdirs. Both scripts used `checkpoint_every=10000`.
+
+**F1 RESULT (run 2026-10-01 on Savio, per-epoch logdirs, 32 runs). Check (a) FAILED: the
+bound as a clean signal is dead.**
+- **Survivors exceed the bound.** 10 of 17 survivors exceed it at some step: max 2.22
+  (E17 eta=1e-3 s0), median of per-run maxima 1.02. They include SPRING(0.99) s1/s2
+  (1.15, 1.01) and PRIME-SR is close (0.98). So "ratio > 1" is routine.
+  - Either float32 error is a small, constant presence in every arm, or the bound check
+    misses something. Unresolved.
+  - **A guard that fires at ratio > 1 would change stable runs.** It violates
+    constraint 2; do not build F2's guard as written.
+- **The 10-step wandb figures were artifacts.** Post-event excesses were reported as
+  10⁵–10¹²×; per epoch they are **3.7–322×**. Variance swings between logged rows made
+  the 10-step chained bound far too tight after an event. Retract "stage 2 is
+  numerical runaway" as stated.
+- **What survives is magnitude.** Before their first event, several diverged runs reach
+  far above anything a survivor shows:
+  - E14 s0 59.8, s2 24.3; E15 s6 85.1, s7 7.1; E16 s2 14.2; E19 C=1e-2 s0 17.4.
+  - Others do not: E14 s1 5.3, E15 s3 3.95, E16 s1 2.68, E19 C=1e-2 s1 1.04, no-cap
+    s0/s1 ~1.85.
+  - Whether a threshold around 3–10 fires early enough to matter is the open question.
+    The script now prints the first step above 1/2/3/5/10, with step counts.
+- **Unchanged, because they never used the bound:** the event timings; the trigger "pre-clip step >
+  3× trailing median" (3 alarms in 1.70M survivor steps; fires 0–130 steps before every
+  first event); the r_ip leads; the local-energy-spike null.
+- **Checkpoints confirmed:** `10000.npz` exists for both E14 s1 and E18 s2.
+
+**Revised next step (F1b, zero GPU):** rerun the updated script on the same logdirs and
+read the per-threshold table.
+- **Survivors never cross some threshold T while diverged runs cross it well before
+  their event:** F2's guard keys on ratio > T.
+- **Otherwise:** drop the bound as a trigger, use the pre-clip-ratio trigger (F3)
+  instead, and let F2 keep only the logging, the equation residual in particular. That
+  residual measures float32 consistency directly instead of through a loose bound.
 
 **F2 — Instrument SS-SPRING and add an exact-bound guard.** Code first, then ~2–3 GPU-h.
 
@@ -1188,7 +1224,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **Next action: F1.** On a Savio login node, run
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). Next action: F1b** — re-run the updated script on Savio. Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

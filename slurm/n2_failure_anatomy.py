@@ -53,6 +53,7 @@ EVENT_DE = 1.0  # Ha above the trailing median energy ...
 EVENT_VAR = 20.0  # ... AND variance above this multiple of its trailing median
 TRIGGER = 3.0  # pre-clip step above this multiple of its trailing median
 COMPLETE_STEP = 99000  # a run that logged past this finished its 100k
+BOUND_THRESHOLDS = [1, 2, 3, 5, 10]
 
 
 def arm_of(name):
@@ -212,6 +213,7 @@ def main():
     print(hdr)
     survivors_trig, survivor_steps, healthy_ratios = 0, 0, []
     leads_trig, leads_rip, healthy_rip = [], [], []
+    thresh_rows = []
     for name in sorted(runs):
         full = runs[name]
         ratio_full = bound_ratio(full)
@@ -239,6 +241,13 @@ def main():
               f"{at_ev:>10.3g}{after:>11.3g}")
         if survived:
             healthy_ratios.append(np.nanmax(healthy))
+        cells = []
+        for th in BOUND_THRESHOLDS:
+            idx = np.nonzero(healthy > th)[0]
+            first = int(full["step"][lo + idx[0]]) if len(idx) else "-"
+            cells.append(f"{first!s:>8} ({len(idx):>5})")
+        ev = int(s[i_ev]) if i_ev is not None else ("NaN" if not survived else "-")
+        thresh_rows.append(f"{name:<42}{ev!s:>10}  " + "  ".join(cells))
 
         # trigger: pre-clip step above TRIGGER x its trailing median
         u = run["update_sq_norm_preclip"]
@@ -258,6 +267,11 @@ def main():
             elif survived:
                 healthy_rip.append(r[np.searchsorted(s, 2000):])
 
+    print("\nBound ratio per threshold, before the first event (from step 1000): first step "
+          "above it (number of steps above it). 1st event 'NaN' = no sharp event but diverged.")
+    print(f"{'run':<42}{'1st event':>10}  " + "  ".join(f"{'> ' + str(t):>16}" for t in BOUND_THRESHOLDS))
+    for row in thresh_rows:
+        print(row)
     if healthy_ratios:
         print(f"\nSurvivors: max healthy bound ratio {max(healthy_ratios):.3g} "
               f"(median over runs {np.median(healthy_ratios):.3g}).")
