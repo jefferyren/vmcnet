@@ -873,6 +873,45 @@ not a *precursor*.**
     floor, e.g. λ_k = max(1e-3, c·|min eig|) (cf. F4c), or move the Gram solve to
     float64.
 
+**PRECURSOR RESULT (`--precursors`, read 2026-10-04). The carried momentum is the
+precursor; the float32 floor is not.**
+- **Healthy baseline** (both safeguard-on arms, 10,000 rows each, 500-row bin medians):
+  - ‖A(βφ)‖/‖ε̄‖ is **2.1–3.9**, drifting up slowly over training.
+  - The equation residual is ≈0.85× carried throughout — it tracks the carried
+    momentum and adds no information of its own.
+  - The Gram min eigenvalue before clipping is **−0.005 to −0.010 in every run,
+    healthy or not**, so the float32 floor sits 5–10× above the damping λ=1e-3 all the
+    time. It is a constant background, not the trigger. Raising the damping above it
+    remains a reasonable hygiene fix (F4c), but it is not *the* fix.
+- **E14 s1-off:**
+  - Carried is 1.7–2.2 in every 50-row bin from 10,000 to 10,399.
+  - Then **12.9** in 10,400–10,449, **36 at 10,450**, and 286 by 10,470. The catastrophe
+    follows at 10,471–480.
+  - r_ip (1.24 at 10,450) and the bound ratio (≤0.7) gave no warning; the pre-clip step
+    gives ≤10 steps.
+  - Carried crossing ~10× its baseline is the only signal with a lead of tens of steps.
+- **E18 s2-off:**
+  - Already sick from the replay's start: carried median 78 over 10,000–10,499, and
+    300–2×10⁴ thereafter.
+  - Bound ratio 0.98–0.9999, i.e. φ saturating the bound as the momentum runs away.
+  - Pre-clip step 10²–10⁸ under the cap while the energy degraded slowly, until it
+    crashed at ~12,960.
+  - A carried cap would have acted thousands of steps earlier.
+- **Next — F3b, a carried-momentum cap.**
+  - Whenever ‖A_k(βφ_{k−1})‖ > K·‖ε̄_k‖, rescale φ_{k−1} so the carried term equals
+    K·‖ε̄_k‖ (soft), or zero it (hard).
+  - It is free (A(βφ) is already computed for the rhs), dimensionless, measured on fresh
+    walkers that φ was not fitted to, and it acts *before* the catastrophe.
+  - Literature: SPAM clips spikes before they enter the moments; Adafactor clips updates
+    relative to a running scale; F8 already proposed a separate budget for the carried
+    part.
+  - **Calibrate K first** (zero GPU): `python slurm/f2_replay_summary.py --carried`. It
+    prints per-row percentiles in healthy rows and, for K ∈ {5, 10, 20, 50}, the healthy
+    rows above K and the first crossing with its lead.
+  - The caveat on K: healthy calibration comes from 2 replays of one system. Before
+    claiming it is untuned, it must stay inactive on N2-eq/CO/atoms (new runs with
+    `diagnostics=True`, or the cap on).
+
 **F1b instructions, as originally written:** rerun the updated script on the same
 logdirs and read the per-threshold table.
 - **Survivors never cross some threshold T while diverged runs cross it well before
@@ -1342,7 +1381,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Next action: `python slurm/f2_replay_summary.py --precursors` (zero GPU).** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor. Next action: `python slurm/f2_replay_summary.py --carried` (zero GPU) to calibrate K, then implement F3b (carried-momentum cap).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

@@ -80,6 +80,12 @@ def main():
         help="print binned medians of the diag_* metrics from the replay start to the "
         "first catastrophe (or the end): is there a slow precursor?",
     )
+    ap.add_argument(
+        "--carried",
+        action="store_true",
+        help="per-row calibration of diag_carried_over_eps = ||A(beta phi)||/||eps||: "
+        "distribution in healthy rows, and first row above each threshold",
+    )
     args = ap.parse_args()
 
     for d in sorted(glob.glob(os.path.join(args.logroot, "f2_*"))):
@@ -148,6 +154,8 @@ def main():
                 )
         if args.precursors:
             precursor_table(d, start, ev if ev is not None else last)
+        if args.carried:
+            carried_table(d, start, ev, last)
 
 
 PRECURSOR_KEYS = [
@@ -160,6 +168,37 @@ PRECURSOR_KEYS = [
     "update_sq_norm_preclip",
     "variance_noclip",
 ]
+
+
+CARRIED_THRESHOLDS = [5, 10, 20, 50]
+
+
+def carried_table(d, start, ev, last):
+    """Per-row ||A(beta phi)||/||eps||. "Healthy" = from the replay start to 300 rows
+    before the first catastrophe (or the end). For each threshold K: rows above K in the
+    healthy span (false alarms if the run survives), and the first row above K overall
+    together with its lead over the catastrophe."""
+    c = load(d, "diag_carried_over_eps", start)
+    if c is None:
+        return
+    hi = (ev - 300) if ev is not None else last + 1
+    h = c[start:hi]
+    h = h[np.isfinite(h)]
+    if len(h):
+        print(
+            f"  carried/eps, healthy rows {start}-{hi - 1}: median {np.median(h):.3g}, "
+            f"p99 {np.percentile(h, 99):.3g}, p99.9 {np.percentile(h, 99.9):.3g}, "
+            f"max {h.max():.3g}"
+        )
+    for k in CARRIED_THRESHOLDS:
+        above = np.nonzero(c[start:] > k)[0]
+        first = int(start + above[0]) if len(above) else None
+        n_healthy = int(np.sum(h > k)) if len(h) else 0
+        lead = (ev - first) if (first is not None and ev is not None) else None
+        print(
+            f"    K={k:<3} healthy rows above: {n_healthy:<6} first row above: "
+            f"{first}  lead over catastrophe: {lead}"
+        )
 
 
 def precursor_table(d, start, end):
