@@ -631,3 +631,83 @@ def test_safeguard_skips_then_rewinds_and_resets_momentum():
     # during the hold, the beta actually used is capped at 0.99
     _, _, _, m3, _ = fn(p2, positions, s2, key)
     assert float(m3["sg_beta_used"]) <= 0.99 + 1e-7
+
+
+def _cap_setup():
+    params, positions, _ = _operator_setup(nchains=9)
+    phi = jax.tree_util.tree_map(
+        lambda x: 5.0 * jax.random.normal(jax.random.PRNGKey(3), x.shape), params
+    )
+    state = _make_state(params, p=4, beta=0.99, phi=phi)
+    centered = jax.random.normal(jax.random.PRNGKey(4), (positions.shape[0],))
+    centered = 0.01 * (centered - jnp.mean(centered))  # small target -> cap binds
+    kwargs = dict(
+        damping=1e-3,
+        probe_damping=1e-3,
+        p=4,
+        probe_lr=0.05,
+        adaptive_eta=False,
+        adaptive_probe=False,
+    )
+    return params, positions, state, centered, kwargs
+
+
+def test_carried_cap_that_cannot_bind_changes_nothing():
+    """A huge carried_cap leaves the step identical to the uncapped one."""
+    params, positions, state, centered, kwargs = _cap_setup()
+    plain = get_same_sampled_spring_unified_step(
+        _log_psi_apply, lambda t: 0.05, **kwargs
+    )
+    capped = get_same_sampled_spring_unified_step(
+        _log_psi_apply, lambda t: 0.05, carried_cap=1e30, **kwargs
+    )
+    u1, s1 = plain(centered, params, positions, state)
+    u2, s2 = capped(centered, params, positions, state)
+    for a, b in zip(
+        jax.tree_util.tree_leaves((u1, s1)), jax.tree_util.tree_leaves((u2, s2))
+    ):
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-7)
+
+
+def test_carried_cap_equals_a_step_with_scaled_momentum():
+    """Test an active cap equals the plain step with momentum beta * scale.
+
+    The scale is the one that brings ||A(beta phi)|| down to K ||eps||.
+    """
+    params, positions, state, centered, kwargs = _cap_setup()
+    k = 2.0
+    capped = get_same_sampled_spring_unified_step(
+        _log_psi_apply,
+        lambda t: 0.05,
+        carried_cap=k,
+        return_diagnostics=True,
+        **kwargs,
+    )
+    u_cap, s_cap, diag = capped(centered, params, positions, state)
+    scale = float(diag["diag_carried_scale"])
+    assert float(diag["diag_carried_over_eps"]) > k  # the cap had something to do
+    np.testing.assert_allclose(
+        scale, k / float(diag["diag_carried_over_eps"]), rtol=1e-5
+    )
+
+    plain = get_same_sampled_spring_unified_step(
+        _log_psi_apply, lambda t: 0.05, **kwargs
+    )
+    u_ref, s_ref = plain(
+        centered, params, positions, state._replace(beta=state.beta * scale)
+    )
+    for a, b in zip(
+        jax.tree_util.tree_leaves((u_cap, s_cap.phi)),
+        jax.tree_util.tree_leaves((u_ref, s_ref.phi)),
+    ):
+        np.testing.assert_allclose(a, b, rtol=1e-5, atol=1e-6)
+
+
+def test_default_config_carries_phase_f_keys():
+    """The Phase F keys exist in the default config, all off."""
+    from vmcnet.train.default_config import get_default_vmc_config
+
+    block = get_default_vmc_config()["optimizer"]["same_sampled_spring_unified"]
+    assert block["diagnostics"] is False
+    assert block["safeguard"] is False
+    assert block["carried_cap"] == 0.0

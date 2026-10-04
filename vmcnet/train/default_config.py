@@ -355,6 +355,10 @@ def get_default_vmc_config() -> Dict:
                 "safeguard_snapshot_every": 250,  # rewind target 250-500 steps old
                 "safeguard_beta_cap": 0.99,  # beta cap held after a rewind
                 "safeguard_hold_steps": 2000,
+                # carried_cap (F3b): if > 0, shrink the carried momentum so that
+                # ||A(beta phi)|| <= carried_cap * ||eps|| on each step's walkers.
+                # 0 = off. Calibrated value from the F2 replays: 10.
+                "carried_cap": 0.0,
             },
             "prime_sr": {
                 # Learning rate settings

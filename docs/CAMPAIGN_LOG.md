@@ -912,6 +912,53 @@ precursor; the float32 floor is not.**
     claiming it is untuned, it must stay inactive on N2-eq/CO/atoms (new runs with
     `diagnostics=True`, or the cap on).
 
+**K CALIBRATION (`--carried`, read 2026-10-04). K=10.** Per-row ‖A(βφ)‖/‖ε̄‖:
+
+| replay | rows | median | p99.9 | max | rows > 10 | rows > 20 | rows > 50 |
+|---|---|---|---|---|---|---|---|
+| E14 s1, on (healthy) | 10,000 | 2.73 | 8.61 | 23 | 9 | 1 | 0 |
+| E18 s2, on (healthy) | 10,000 | 3.04 | 11.3 | 33.5 | 15 | 2 | 0 |
+| E14 s1, off (until 300 rows before its event) | 180 | 1.93 | 3.35 | 3.42 | 0 | 0 | 0 |
+| E18 s2, off (until 300 rows before its event) | 2,761 | 225 | 3.7×10⁶ | 4.1×10⁶ | 2,545 | 2,090 | 1,786 |
+
+- **Healthy excursions above 10 are isolated single rows** (0.1% of rows). In the failing
+  runs the crossing is sustained.
+  - E14 s1-off: a one-row spike at 10,211, a calm stretch at 1.7–2.0, then a sustained
+    rise from ~10,400. It first exceeds 50 at 10,456, 24 rows before the event.
+  - E18 s2-off: above 10 from row 10,154, ~2,900 rows before its catastrophe.
+- **K=50 would be alarm-free but leaves only ~24 rows of lead.** A *soft* cap at K=10
+  costs only a one-step momentum trim on the rare healthy spike, so K=10 is the choice.
+
+**F3b IMPLEMENTED (2026-10-04), NOT YET RUN.**
+- **Code:** new key `carried_cap` (default 0 = off) in `same_sampled_spring_unified.py`
+  and `default_config.py`.
+  - If ‖A(βφ)‖ > K·‖ε̄‖, the momentum is scaled so the carried term equals K·‖ε̄‖. That
+    equals one step at momentum β·scale; the probe is untouched.
+  - It logs `diag_carried_scale`, and `diag_carried_over_eps` is reported before the
+    cap.
+  - Tests: a cap that cannot bind is exact, and an active cap equals the scaled-momentum
+    step. 26 SS-SPRING unit tests and 60 update tests pass; mypy is clean.
+  - CPU smoke test: the cap engaged in the training loop and held the carried term at K.
+- **Run:** `slurm/f3b_n2_carried_cap.sbatch` (array 0-11). Six failing states, each
+  replayed for 10k steps from its last checkpoint before its first catastrophe:
+  - E14 s0/s1/s2, E15 s7 and E18 s2 from 10k;
+  - E15 s6 from 60k, 1.2k steps before its event.
+
+  Two arms per state: diagnostics only, and diagnostics + `carried_cap=10`. The
+  safeguard is off in both, so the cap is tested alone. About 20–24 GPU-h at most.
+- **Readout:** `python slurm/f2_replay_summary.py --carried --logroot
+  /global/scratch/users/$USER/vmcnet_logs/phase_f/f3b_carried_cap`. Each run's
+  original is now found from its `reload_config.json`, and cap-active rows are reported.
+- **Reading the result.**
+  - Replays are new trajectories (F2 RESULT), so read it as a rate: x/6 baseline
+    replays fail vs y/6 capped.
+  - **If capped arms still fail,** check whether carried sat at the cap (the cap binds
+    but is not enough) or never reached K (another channel).
+  - **If it works,** the next gates are:
+    - the cap must stay rare on N2-eq/CO/atoms (new short runs with diagnostics on);
+    - a full-protocol arm, ≥8 fresh seeds × 100k at the E14 cell, against E14+E15's
+      6/8.
+
 **F1b instructions, as originally written:** rerun the updated script on the same
 logdirs and read the per-threshold table.
 - **Survivors never cross some threshold T while diverged runs cross it well before
@@ -1341,6 +1388,11 @@ Two more found while writing the E9/E11 reports:
     `tests/units/updates/test_same_sampled_spring_unified.py`.
   - `slurm/f2_n2_replay.sbatch` is the checkpoint replay of E14 s1 and E18 s2.
   - `slurm/f2_replay_summary.py` is its readout.
+- **Phase F F3b (2026-10-04):**
+  - `carried_cap` option, default 0 = off.
+  - `slurm/f3b_n2_carried_cap.sbatch`: six failing states × {no cap, cap 10}.
+  - `f2_replay_summary.py` gained the `--precursors`, `--carried` and `--pattern`
+    options.
 
 ## 9. How to keep this document current
 
@@ -1381,7 +1433,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor. Next action: `python slurm/f2_replay_summary.py --carried` (zero GPU) to calibrate K, then implement F3b (carried-momentum cap).** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`). Next action: `sbatch slurm/f3b_n2_carried_cap.sbatch`, then `python slurm/f2_replay_summary.py --carried --logroot .../phase_f/f3b_carried_cap`.** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

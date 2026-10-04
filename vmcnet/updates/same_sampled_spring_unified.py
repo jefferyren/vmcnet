@@ -262,6 +262,7 @@ def get_same_sampled_spring_unified_step(
     adaptive_eta: bool,
     adaptive_probe: bool,
     return_diagnostics: bool = False,
+    carried_cap: float = 0.0,
 ) -> Callable[
     [Array, P, Array, SameSampledSPRINGUnifiedState],
     Tuple,
@@ -285,6 +286,14 @@ def get_same_sampled_spring_unified_step(
       momentum on this step's (fresh) walkers.
     - gram_lam_max, gram_min_eig_preclip, gram_trace, gram_n_eig_below_damping.
     - phi_norm, eps_norm, and the two kernel stats from _build_operators_with_stats.
+    - carried_scale (only with carried_cap > 0): the factor applied to the carried
+      momentum this step (1 = cap inactive). carried_over_eps is reported BEFORE it.
+
+    With `carried_cap = K > 0` (Phase F step F3b), whenever the carried momentum seen
+    on this step's walkers exceeds K times the target, ||A(beta phi)|| > K ||eps||, the
+    momentum buffer entering the step is shrunk so that ||A(beta phi)|| = K ||eps||.
+    Because A is linear this costs nothing extra; it is equivalent to using momentum
+    beta * scale for this one step. K = 0 disables it (the default, unchanged path).
 
     Args:
         log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
@@ -296,6 +305,8 @@ def get_same_sampled_spring_unified_step(
         adaptive_eta: if True, eta_main = decay(t) * (1 - beta*(1 - eta0)) with
             eta0 = lr(0) and decay(t) = lr(t)/eta0 (see _adaptive_eta_main); else lr(t).
         adaptive_probe: if True, the probe step uses eta_main instead of probe_lr.
+        return_diagnostics: if True, also return the diag dict described above.
+        carried_cap: K for the carried-momentum cap; 0 disables it.
 
     Returns:
         The step kernel described above.
@@ -331,10 +342,21 @@ def get_same_sampled_spring_unified_step(
         # ---- main SPRING (identical to base SPRING; beta is dynamic, from state) ----
         epsilon_bar = centered_local_energies / sqrt_n
         carried = apply_A(multiply_tree_by_scalar(state.phi, beta))
+        carried_raw_norm = jnp.linalg.norm(carried)
+        if carried_cap > 0:
+            # F3b: shrink the carried momentum to at most K x the target on fresh walkers
+            carried_scale = jnp.minimum(
+                1.0,
+                carried_cap * jnp.linalg.norm(epsilon_bar) / (carried_raw_norm + 1e-30),
+            )
+            carried = carried * carried_scale
+            beta_main = beta * carried_scale
+        else:
+            beta_main = beta
         rhs_main = epsilon_bar - carried
         dual_main = solve(rhs_main, damping)
         step_primal = apply_AT(dual_main)
-        phi_new = jax.tree_map(lambda s, ph: s + beta * ph, step_primal, state.phi)
+        phi_new = jax.tree_map(lambda s, ph: s + beta_main * ph, step_primal, state.phi)
 
         # eta_main: with adaptive_eta, the schedule's decay is applied as an OUTER
         # factor -- eta_main = decay(t) * (1 - beta*(1 - eta0)) -- so the step still
@@ -403,12 +425,12 @@ def get_same_sampled_spring_unified_step(
         eps_norm = jnp.linalg.norm(epsilon_bar)
         phi_prev_norm = jnp.sqrt(tree_inner_product(state.phi, state.phi))
         phi_new_norm = jnp.sqrt(tree_inner_product(phi_new, phi_new))
-        bound = beta * phi_prev_norm + eps_norm / (2.0 * jnp.sqrt(damping))
+        bound = beta_main * phi_prev_norm + eps_norm / (2.0 * jnp.sqrt(damping))
         residual = apply_A(phi_new) - (epsilon_bar - damping * dual_main)
         diag = {
             "diag_bound_ratio": phi_new_norm / bound,
             "diag_equation_residual": jnp.linalg.norm(residual) / eps_norm,
-            "diag_carried_over_eps": jnp.linalg.norm(carried) / eps_norm,
+            "diag_carried_over_eps": carried_raw_norm / eps_norm,
             "diag_phi_norm": phi_new_norm,
             "diag_eps_norm": eps_norm,
             "diag_gram_lam_max": jnp.max(tvals),
@@ -419,6 +441,8 @@ def get_same_sampled_spring_unified_step(
             ),
             **kernel_stats,
         }
+        if carried_cap > 0:
+            diag["diag_carried_scale"] = carried_scale
         return updates, new_state, diag
 
     return step
@@ -745,6 +769,7 @@ def initialize_same_sampled_spring_unified(
     # Phase F options (2026-10). Read with .get so configs written before they existed
     # still load; both default to off, which leaves the update path unchanged.
     diagnostics = bool(optimizer_config.get("diagnostics", False))
+    carried_cap = float(optimizer_config.get("carried_cap", 0.0))
     safeguard = bool(optimizer_config.get("safeguard", False))
     sg_cfg = SafeguardConfig(
         step_ratio=float(optimizer_config.get("safeguard_step_ratio", 3.0)),
@@ -768,6 +793,7 @@ def initialize_same_sampled_spring_unified(
         bool(optimizer_config.adaptive_eta),
         bool(optimizer_config.adaptive_probe),
         return_diagnostics=diagnostics or safeguard,
+        carried_cap=carried_cap,
     )
 
     def init_state(local_params: P, subkey: PRNGKey) -> SameSampledSPRINGUnifiedState:

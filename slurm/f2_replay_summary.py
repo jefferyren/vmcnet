@@ -1,4 +1,4 @@
-"""Read out the Phase F F2/F3 replays (slurm/f2_n2_replay.sbatch).
+"""Read out Phase F checkpoint replays (f2_n2_replay / f3b_n2_carried_cap sbatch).
 
 For each replay logdir under LOGROOT it prints:
   1. Reproduction check: max |E_replay - E_original| over epochs 10000-10500. If the
@@ -14,13 +14,19 @@ For each replay logdir under LOGROOT it prints:
   4. Onset anatomy (safeguard-off arms): every logged quantity, epoch by epoch, over the
      30 epochs before the first catastrophe -- which one moves first.
 
+Also reports, for runs with carried_cap on, how often the cap was active. The
+original run is read from each replay's reload_config.json.
+
 Usage (Savio login node, after the array finishes):
-    python slurm/f2_replay_summary.py
-    python slurm/f2_replay_summary.py --logroot /path/to/phase_f/f2_replay
+    python slurm/f2_replay_summary.py                       # F2/F3 replays
+    python slurm/f2_replay_summary.py --precursors --carried
+    python slurm/f2_replay_summary.py \
+        --logroot /global/scratch/users/$USER/vmcnet_logs/phase_f/f3b_carried_cap
 """
 
 import argparse
 import glob
+import json
 import os
 import sys
 
@@ -71,9 +77,20 @@ def first_event(e, v, start):
     return int(idx[0] * 10) if len(idx) else None
 
 
+def original_logdir(d, name):
+    """The run a replay was reloaded from: reload_config.json's logdir, if present."""
+    path = os.path.join(d, "reload_config.json")
+    if os.path.exists(path):
+        logdir = json.load(open(path)).get("logdir")
+        if logdir and logdir != "NONE":
+            return logdir
+    return ORIGINALS["e14s1" if "e14s1" in name else "e18s2"]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--logroot", default=DEFAULT_ROOT)
+    ap.add_argument("--pattern", default="f*_N2_4.0_*", help="replay logdir glob")
     ap.add_argument(
         "--precursors",
         action="store_true",
@@ -88,17 +105,17 @@ def main():
     )
     args = ap.parse_args()
 
-    for d in sorted(glob.glob(os.path.join(args.logroot, "f2_*"))):
+    for d in sorted(glob.glob(os.path.join(args.logroot, args.pattern))):
         name = os.path.basename(d)
-        tag = "e14s1" if "e14s1" in name else "e18s2"
+        original = original_logdir(d, name)
         e, v = load(d, "energy_noclip"), load(d, "variance_noclip")
-        orig_e = load(ORIGINALS[tag], "energy_noclip")
+        orig_e = load(original, "energy_noclip")
         # a file only the replay writes: sg_* (safeguard on) or diag_* (originals ran
         # without diagnostics)
         new = load(d, "sg_trigger")
         if new is None:
             new = load(d, "diag_bound_ratio")
-        print(f"\n=== {name}  (original: {ORIGINALS[tag]})")
+        print(f"\n=== {name}  (original: {original})")
         if e is None or new is None:
             print("  no replay epochs logged yet")
             continue
@@ -130,6 +147,15 @@ def main():
             f"(original, 500 rows before the replay: {before:.4f})"
         )
 
+        scale = load(d, "diag_carried_scale", start)
+        if scale is not None:
+            capped = np.nonzero(scale[start:] < 1.0)[0]
+            first_cap = int(start + capped[0]) if len(capped) else None
+            print(
+                f"  carried cap: active on {len(capped)} of {last + 1 - start} rows "
+                f"({100.0 * len(capped) / max(1, last + 1 - start):.2f}%); first at "
+                f"{first_cap}; min scale {np.nanmin(scale[start:]):.3g}"
+            )
         trig, rew = load(d, "sg_trigger", start), load(d, "sg_rewind", start)
         if trig is not None:
             t_ep = np.nonzero(trig > 0)[0]
