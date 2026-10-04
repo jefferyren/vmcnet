@@ -829,6 +829,50 @@ not a *precursor*.**
   Row numbers equal epochs to within one, because `reload.append` re-logs the
   checkpoint epoch.
 
+**F2/F3 RESULT (replays run on Savio, read 2026-10-04).**
+
+| replay | outcome | safeguard |
+|---|---|---|
+| E14 s1, off | catastrophe 10,470, dead at 18,513 | — |
+| E14 s1, on | **reached 20,000, mean E −109.171** (pre-replay −109.098) | 1 skip (12,270), 0 rewinds |
+| E18 s2, off | catastrophic by ~13,000, dead at 15,421 | — |
+| E18 s2, on | **reached 20,000, mean E −109.043** (pre-replay −108.981) | 6 triggers, 2 rewinds (18,389; 19,749) |
+
+- **Caveat 1 — no replay reproduced its original.** Max |ΔE| over the first 500 rows is
+  0.14–6.6 Ha. The added ops changed float32 rounding, so each arm is a *new
+  trajectory* from the same 10k state. Off-vs-on is therefore not a paired comparison.
+- **Caveat 2 — E14 s1-on never met a catastrophe.** Its safeguard fired once, at 12,270,
+  well after the off arm's event at 10,470. Its survival cannot be credited to the
+  safeguard.
+- **E18 s2-on is the real evidence that F3 works:** two rewinds, and it recovers each
+  time. That is still n=1. The late, repeated triggers mean the hazard persists and
+  the safeguard keeps handling it.
+- **E14 s1-off onset anatomy, rows 10,450–10,472** (the mechanistic result):
+  - ‖A(βφ)‖/‖ε̄‖ is already **36** and the equation residual **41** at 10,450, while
+    energy, variance and step are normal.
+  - Both grow steadily: carried 62 and residual 77 at 10,460; 108 and 160 at 10,466;
+    286 and 677 at 10,470.
+  - r_ip climbs slowly over the same window, 1.25 → 2.7.
+  - The variance first moves at 10,461. Gram λ_max first moves at ~10,465. Energy and the
+    step explode at 10,471–72.
+  - The bound ratio stays ≤0.7 until 10,471, so the exact bound is confirmed as a
+    lagging detector.
+  - **Min Gram eigenvalue before clipping ≈ −0.004 throughout.** The float32 noise floor
+    of the Gram solve is ~4× the damping λ=1e-3, so components below the floor are
+    inverted at up to 1/λ.
+  - A residual comparable to the carried momentum is what that predicts: the solve
+    cannot cancel a carried component that is 36× the target.
+- **Open: are carried ≈36 and residual ≈41 abnormal, or the healthy baseline?** The
+  table covered only 30 rows. Run `python slurm/f2_replay_summary.py --precursors`. It
+  prints 500-row bin medians from 10,000 to the event, and the safeguard-on arms give
+  the healthy baseline.
+  - **Clear rise over hundreds of steps:** there is a precursor with real lead time. The
+    trigger becomes a cap on ‖A(βφ)‖/‖ε̄‖ (reset or shrink the momentum), which is
+    free, held-out by construction, and dimensionless.
+  - **Always ~40:** the noise-floor reading dominates. Raise the damping above the
+    floor, e.g. λ_k = max(1e-3, c·|min eig|) (cf. F4c), or move the Gram solve to
+    float64.
+
 **F1b instructions, as originally written:** rerun the updated script on the same
 logdirs and read the per-threshold table.
 - **Survivors never cross some threshold T while diverged runs cross it well before
@@ -1298,7 +1342,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). Next action: `sbatch slurm/f2_n2_replay.sbatch`, then `python slurm/f2_replay_summary.py`.** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Next action: `python slurm/f2_replay_summary.py --precursors` (zero GPU).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

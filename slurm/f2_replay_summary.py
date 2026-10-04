@@ -74,6 +74,12 @@ def first_event(e, v, start):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--logroot", default=DEFAULT_ROOT)
+    ap.add_argument(
+        "--precursors",
+        action="store_true",
+        help="print binned medians of the diag_* metrics from the replay start to the "
+        "first catastrophe (or the end): is there a slow precursor?",
+    )
     args = ap.parse_args()
 
     for d in sorted(glob.glob(os.path.join(args.logroot, "f2_*"))):
@@ -140,6 +146,41 @@ def main():
                 print(
                     "  " + f"{ep:>6}" + "".join(f"{cols[k][ep]:>13.4g}" for k in cols)
                 )
+        if args.precursors:
+            precursor_table(d, start, ev if ev is not None else last)
+
+
+PRECURSOR_KEYS = [
+    "diag_carried_over_eps",
+    "diag_equation_residual",
+    "diag_gram_min_eig_preclip",
+    "diag_gram_lam_max",
+    "diag_bound_ratio",
+    "probe_r_ip",
+    "update_sq_norm_preclip",
+    "variance_noclip",
+]
+
+
+def precursor_table(d, start, end):
+    """Medians in 500-row bins from the replay start to `end`, then 50-row bins over
+    the last 500 rows before it. A slow precursor shows up as a trend in the coarse
+    bins; the fine bins show the final approach."""
+    cols = {k: load(d, k, start) for k in PRECURSOR_KEYS}
+    cols = {k: x for k, x in cols.items() if x is not None}
+    short = {
+        k: k.replace("diag_", "").replace("update_sq_norm_", "")[:12] for k in cols
+    }
+    edges = list(range(start, max(start, end - 500), 500)) + list(
+        range(max(start, end - 500), end, 50)
+    )
+    print(f"  precursors: bin medians up to row {end}")
+    print("  " + f"{'rows':>13}" + "".join(f"{short[k]:>13}" for k in cols))
+    for lo, hi in zip(edges, edges[1:] + [end]):
+        if hi <= lo:
+            continue
+        cells = "".join(f"{np.nanmedian(cols[k][lo:hi]):>13.4g}" for k in cols)
+        print("  " + f"{lo:>6}-{hi:<6}" + cells)
 
 
 if __name__ == "__main__":
