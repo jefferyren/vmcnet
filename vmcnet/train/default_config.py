@@ -290,6 +290,9 @@ def get_default_vmc_config() -> Dict:
                 "damping": 0.001,
                 "constrain_norm": True,
                 "norm_constraint": 0.001,
+                # F4d: centre the Gram rows BEFORE the contraction (float32
+                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
+                "gram_center_first": False,
             },
             "minsr_momentum": {
                 # Learning rate settings. The SPRING paper tunes eta per method and
@@ -307,6 +310,9 @@ def get_default_vmc_config() -> Dict:
                 "damping": 0.001,
                 "constrain_norm": True,
                 "norm_constraint": 0.001,
+                # F4d: centre the Gram rows BEFORE the contraction (float32
+                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
+                "gram_center_first": False,
             },
             "gauss_newton": {
                 # Learning rate settings
@@ -367,6 +373,9 @@ def get_default_vmc_config() -> Dict:
                 # ||A(beta phi)|| <= carried_cap * ||eps|| on each step's walkers.
                 # 0 = off. Calibrated value from the F2 replays: 10.
                 "carried_cap": 0.0,
+                # F4d: centre the Gram rows BEFORE the contraction (float32
+                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
+                "gram_center_first": False,
             },
             "prime_sr": {
                 # Learning rate settings
@@ -382,6 +391,9 @@ def get_default_vmc_config() -> Dict:
                 # behavior); lower values are an ABLATION knob only, to test
                 # whether PRIME-SR failures come from mu_k overshooting.
                 "mu_cap": 1.0,
+                # F4d: centre the Gram rows BEFORE the contraction (float32
+                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
+                "gram_center_first": False,
             },
         },
     }

@@ -32,7 +32,6 @@ from typing import Dict
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
-import neural_tangents as nt  # type: ignore
 from ml_collections import ConfigDict
 import chex
 import optax
@@ -44,11 +43,13 @@ from vmcnet.utils.typing import UpdateDataFn, GetPositionFromData, LearningRateS
 from .update_param_fns import UpdateParamFn, get_update_norm_diagnostics
 from .optax_utils import initialize_optax_optimizer
 from .spring import constrain_norm, construct_spring_update_param_fn
+from .sr_kernel import get_sr_kernel_fn
 
 
 def get_minsr_step(
     log_psi_apply: ModelApply[P],
     damping: chex.Scalar = 0.001,
+    gram_center_first: bool = False,
 ):
     """Get the MinSR update direction function, Eq. (41).
 
@@ -60,12 +61,14 @@ def get_minsr_step(
     Args:
         log_psi_apply: computes log|psi|, with signature (params, x) -> log|psi|(x).
         damping: Tikhonov regularization lambda applied to the Gram matrix.
+        gram_center_first: centre the Gram rows before the contraction (see
+            `sr_kernel.py`; Phase F step F4d). Off = the original construction.
 
     Returns:
         Callable: (centered_energies, params, positions) -> phi, the MinSR direction
         before the learning rate and the norm constraint are applied.
     """
-    kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+    kernel_fn = get_sr_kernel_fn(log_psi_apply, gram_center_first)
 
     def minsr_step(
         centered_energies: Array,
@@ -112,7 +115,11 @@ def initialize_minsr_momentum(
     `optimizer_config.mu` selects the baseline: 0.0 is MinSR, and the SPRING paper
     uses 0.9 for MinSR+M.
     """
-    minsr_step = get_minsr_step(log_psi_apply, optimizer_config.damping)
+    minsr_step = get_minsr_step(
+        log_psi_apply,
+        optimizer_config.damping,
+        gram_center_first=bool(optimizer_config.get("gram_center_first", False)),
+    )
     mu = float(optimizer_config.mu)
 
     # optax trace: t_k = mu * t_{k-1} + g_k. Feeding g_k = (1 - mu) * MinSR_k makes

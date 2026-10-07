@@ -4,7 +4,6 @@ from typing import Callable, Dict
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
-import neural_tangents as nt  # type: ignore
 from ml_collections import ConfigDict
 import chex
 import optax
@@ -25,6 +24,7 @@ from .update_param_fns import (
     update_metrics_with_noclip,
 )
 from .optax_utils import initialize_optax_optimizer
+from .sr_kernel import get_sr_kernel_fn
 
 
 def construct_spring_update_param_fn(
@@ -83,6 +83,7 @@ def initialize_spring(
         log_psi_apply,
         optimizer_config.damping,
         optimizer_config.mu,
+        gram_center_first=bool(optimizer_config.get("gram_center_first", False)),
     )
     # Optional momentum schedule. Absent keys keep the constant-mu behavior, so
     # configs written before this option existed still load.
@@ -205,14 +206,18 @@ def get_spring_step(
     log_psi_apply: ModelApply[P],
     damping: chex.Scalar = 0.001,
     mu: chex.Scalar = 0.99,
+    gram_center_first: bool = False,
 ):
     """Get the SPRING update function.
 
     The returned step accepts an optional `mu_override`, a traced scalar that
     replaces the fixed `mu` for that step. This is what lets a momentum schedule
     drive the update without duplicating the solve.
+
+    With `gram_center_first` the Gram rows are centred before the contraction
+    (see `sr_kernel.py`; Phase F step F4d). Off = the original construction.
     """
-    kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+    kernel_fn = get_sr_kernel_fn(log_psi_apply, gram_center_first)
 
     def spring_step(
         centered_energies: P,

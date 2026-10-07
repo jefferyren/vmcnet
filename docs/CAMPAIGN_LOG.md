@@ -1104,6 +1104,67 @@ catastrophe. It slows the approach, then the run dies through the uncapped probe
     - **only float64 fixes it:** float64 accumulation, or damping above the floor
       (F4c);
     - **neither changes the step:** the floor is not the problem.
+- **[4b] RESULT (2026-10-07): CENTRING AFTER THE PRODUCT IS THE CAUSE, AND CENTRING
+  FIRST FIXES IT IN FLOAT32.**
+
+  | Gram | min eig | # < 0 | # < damping | ‖Δstep vs f64‖ | eq. residual |
+  |---|---|---|---|---|---|
+  | module kernel (nt, f32, centre after) | −0.0057 | 263 | 323 | **4.60** | 1.81 |
+  | rows f32, centre after | −0.049 | 236 | 343 | 2.96 | 3.69 |
+  | **rows f32, centre first** | 9.4e-6 | 0 | 462 | **0.066** | 0.65 |
+  | rows f64 (reference) | 2.0e-5 | 0 | 462 | 0 | 0.63 |
+
+  - ‖step‖ of the f64 reference is 5.98. **The module's step is off by 4.6, i.e.
+    ~77% of the new part of every step is float32 cancellation error.**
+  - Centre-first float32 agrees with float64 to ~1%. Its spectrum is correct: no
+    negative eigenvalues, and 462 genuine eigenvalues below the damping.
+  - The residual floor of ~0.63, even for f64, is the float32 jvp/vjp used to
+    *evaluate* the residual. Read ‖Δstep‖ as the clean measure.
+  - **All four SR optimizers build T this way** (`spring.py`, `prime_sr.py`,
+    `minsr_momentum.py` and SS-SPRING, inherited from upstream SPRING). Every arm of
+    the campaign carries this error.
+  - Momentum carries each step's error for ~1/(1−β) steps: ~300 at β ≈ 0.997, 100 at
+    0.99, ~20 at PRIME-SR's 0.95. That would explain why stability on N2-4.0 is
+    monotone in momentum for fixed and adaptive alike (E16) — **a hypothesis, not yet
+    tested.**
+  - **Open:** why stretched N2? Presumably a large mean gradient relative to the centred
+    part (`diag_mean_jac_sq_over_trace` 15–20) means heavy cancellation. Check with this
+    script on an N2-eq / CO / carbon checkpoint.
+  - The 21-vs-45 F3b split still did not reproduce (20.73 both arms on this node).
+- **F4d IMPLEMENTED (2026-10-07), NOT YET RUN on N2.**
+  - `vmcnet/updates/sr_kernel.py: get_sr_kernel_fn(log_psi_apply, center_first)`. It
+    has the neural-tangents kernel signature, so each optimizer only changes how its
+    kernel is built.
+  - With `center_first` it computes the walker-mean gradient m (one vjp). It then
+    takes the NTK of log ψ − ⟨stop_gradient(m), θ⟩, so the rows are J_i − m before
+    the contraction.
+  - Config key `gram_center_first` (default False) in all four SR blocks: `spring`,
+    `minsr_momentum`, `prime_sr`, `same_sampled_spring_unified`.
+  - SS-SPRING's `diag_mean_jac_sq_over_trace` is now ‖mean O‖²/tr(centred) from one
+    vjp, not trace(uncentered) − trace(centred). The two are equal in exact
+    arithmetic; the old formula would read ~0 under F4d.
+  - **Tests:** `tests/units/updates/test_sr_kernel.py`, 7 tests. With a dominant mean
+    gradient (rows x + 100), centre-first matches the float64 centred kernel to
+    < 1e-5, and centre-after is >100× worse. The flag leaves each optimizer's step
+    unchanged on a well-conditioned toy. The SS-SPRING statistic matches its
+    definition.
+  - 133 unit tests pass, mypy clean. CPU smoke runs train all four optimizers with the
+    flag on through the pmap loop.
+  - `f4_one_step_check.py`: [1] adds the module step with `gram_center_first`; [4b]
+    adds the "F4d kernel" variant. Both should match "rows f64" on the N2 checkpoint.
+  - **Run:** `slurm/f4d_n2_center_first.sbatch`, array 0-5, the same six failing states
+    from their checkpoints. One arm each: F4d on, no cap, no safeguard. ~12–14 GPU-h.
+    The baseline is the F3b no-cap arms (5/6 failed). Readout: `f2_replay_summary.py
+    --carried --logroot .../phase_f/f4d_center_first`.
+  - **F3c is on hold** pending this result.
+- **Original F4d proposal: centre the Jacobian before the contraction.**
+  - Cheapest form: compute the mean gradient m once per step (one vjp with ones/n).
+  - Take the kernel of g(θ, x) = log ψ(θ, x) − ⟨stop_gradient(m), θ⟩, whose
+    per-walker gradient is J_i − m.
+  - The kernel then contracts already-centred rows. The existing centring afterwards
+    becomes a harmless no-op.
+  - Put it behind a flag, default off, in all four optimizers so benchmark arms stay
+    comparable.
 
 **F3c IMPLEMENTED (2026-10-07), NOT YET RUN: rewind when the cap keeps binding, and
 guard the probe.**
@@ -1587,6 +1648,11 @@ Two more found while writing the E9/E11 reports:
   - With `safeguard` on, a non-finite probe rewinds and cannot NaN β.
   - `slurm/f3c_n2_cap_rewind.sbatch`: six failing states × {rewind, rewind + cap 10}.
   - `f2_replay_summary.py --sustained` calibrates W/M; the onset table now shows `mu`.
+- **Phase F F4d (2026-10-07):**
+  - `vmcnet/updates/sr_kernel.py` (`get_sr_kernel_fn`): the centre-first Gram.
+  - `gram_center_first` key in all four SR optimizer blocks, default off.
+  - `slurm/f4_one_step_check.py`: one-step float32 diagnosis from a checkpoint.
+  - `slurm/f4d_n2_center_first.sbatch`: six failing states with the fix only.
 
 ## 9. How to keep this document current
 
@@ -1627,7 +1693,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07. Next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. Next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

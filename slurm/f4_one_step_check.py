@@ -25,6 +25,8 @@ on one state, with no training:
      float32 centred FIRST, and float64 (the reference). For each: the spectrum, the
      step, and the equation residual ||A A^T d - (rhs - damping d - mean d)|| / ||eps||
      that an exact solve makes 0. Host numpy; needs ~4 GB of host RAM (-c 4).
+  F4d: section 1 also runs the module step with gram_center_first, and 4b adds the
+     F4d kernel (sr_kernel.py), which should match "rows f32, centre first".
   6. With --dtype float64 (second run): the whole step in float64, compared with the
      float32 run's saved vectors (--compare). Does NOT fit on a 2080 Ti (local
      energies alone need 9 GB); run it on CPU if at all. 4b answers the same question.
@@ -73,6 +75,7 @@ def main():
     import vmcnet.utils as utils
     from vmcnet.train import runners
     from vmcnet.updates import same_sampled_spring_unified as ssu
+    from vmcnet.updates.sr_kernel import get_sr_kernel_fn
 
     import neural_tangents as nt  # after vmcnet, see the SS-SPRING unit tests
 
@@ -130,13 +133,18 @@ def main():
     centered = local_e - energy
 
     kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+    f4d_kernel_fn = get_sr_kernel_fn(log_psi_apply, center_first=True)
     phi_flat, unravel = ravel_pytree(core.phi)
 
     # ---- 1. the module's own step, cap off vs cap path at scale 1 ----
     lr = float(opt_cfg.learning_rate)
     probe_lr = lr if opt_cfg.probe_lr < 0 else float(opt_cfg.probe_lr)
     print("\n[1] module step from the checkpoint state")
-    for label, cap in (("cap off", 0.0), ("cap path, K=1e30 (inactive)", 1e30)):
+    for label, cap, cf in (
+        ("cap off", 0.0, False),
+        ("cap path, K=1e30 (inactive)", 1e30, False),
+        ("F4d gram_center_first", 0.0, True),
+    ):
         step_fn = ssu.get_same_sampled_spring_unified_step(
             log_psi_apply,
             lambda t: lr,
@@ -148,6 +156,7 @@ def main():
             bool(opt_cfg.adaptive_probe),
             return_diagnostics=True,
             carried_cap=cap,
+            gram_center_first=cf,
         )
         _, _, diag = jax.jit(step_fn)(centered, params, pos, core)
         print(
@@ -158,9 +167,9 @@ def main():
         )
 
     # ---- shared pieces ----
-    def gram(params_, pos_):
+    def gram(params_, pos_, kfn=kernel_fn):
         m = pos_.shape[0]
-        t = kernel_fn(pos_, pos_, "ntk", params_) / m
+        t = kfn(pos_, pos_, "ntk", params_) / m
         t = t - jnp.mean(t, axis=0, keepdims=True)
         t = t - jnp.mean(t, axis=1, keepdims=True)
         t = t + jnp.ones((m, m), t.dtype) / m
@@ -332,6 +341,12 @@ def main():
 
         variants = [
             ("module kernel (f32)", np.asarray(ref["gram"])),
+            (
+                "F4d kernel (f32)",
+                np.asarray(
+                    jax.jit(lambda q, x: gram(q, x, f4d_kernel_fn))(params, pos)
+                ),
+            ),
             ("rows f32, centre after", gram_from_rows(False, np.float32)),
             ("rows f32, centre first", gram_from_rows(True, np.float32)),
             ("rows f64 (reference)", gram_from_rows(True, np.float64)),

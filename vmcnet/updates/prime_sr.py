@@ -22,7 +22,6 @@ import chex
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
-import neural_tangents as nt  # type: ignore
 import optax
 from ml_collections import ConfigDict
 
@@ -33,6 +32,7 @@ from vmcnet.updates.update_param_fns import (
     make_traced_fn_with_single_metrics,
     update_metrics_with_noclip,
 )
+from vmcnet.updates.sr_kernel import get_sr_kernel_fn
 from vmcnet.utils.distribute import pmean_if_pmap
 from vmcnet.utils.pytree_helpers import (
     multiply_tree_by_scalar,
@@ -153,6 +153,7 @@ def get_prime_sr_step(
     learning_rate_schedule: LearningRateSchedule,
     damping: chex.Scalar = 0.001,
     mu_cap: chex.Scalar = 1.0,
+    gram_center_first: bool = False,
 ) -> Callable[[Array, P, Array, PRIMESRState], Tuple[P, PRIMESRState]]:
     """Get the PRIME-SR step kernel.
 
@@ -168,11 +169,13 @@ def get_prime_sr_step(
         mu_cap: upper bound applied to the adaptive momentum mu_k. The default
             1.0 is a no-op (paper behavior); setting e.g. 0.95 is an ablation
             knob to test whether PRIME-SR failures come from mu_k overshooting.
+        gram_center_first: centre the Gram rows before the contraction (see
+            `sr_kernel.py`; Phase F step F4d). Off = the original construction.
 
     Returns:
         The step kernel described above.
     """
-    kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+    kernel_fn = get_sr_kernel_fn(log_psi_apply, gram_center_first)
 
     def prime_sr_step(
         centered_energies: Array,
@@ -359,6 +362,7 @@ def initialize_prime_sr(
         learning_rate_schedule,
         optimizer_config.damping,
         mu_cap=float(optimizer_config.get("mu_cap", 1.0)),
+        gram_center_first=bool(optimizer_config.get("gram_center_first", False)),
     )
 
     def init_state(local_params: P, local_positions: Array) -> PRIMESRState:

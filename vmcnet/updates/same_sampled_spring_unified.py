@@ -14,7 +14,6 @@ import chex
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
-import neural_tangents as nt  # type: ignore
 import optax
 from ml_collections import ConfigDict
 
@@ -25,6 +24,7 @@ from vmcnet.updates.update_param_fns import (
     make_traced_fn_with_single_metrics,
     update_metrics_with_noclip,
 )
+from vmcnet.updates.sr_kernel import get_sr_kernel_fn
 from vmcnet.utils.distribute import pmean_if_pmap
 from vmcnet.utils.pytree_helpers import (
     multiply_tree_by_scalar,
@@ -113,7 +113,8 @@ def _build_operators_with_stats(
     consumer of the returned eigendecomposition (not applied in this function).
 
     Args:
-        kernel_fn: neural-tangents empirical kernel, built once from `log_psi_apply`.
+        kernel_fn: walker NTK with the neural-tangents signature (`get_sr_kernel_fn`),
+            built once from `log_psi_apply`.
         log_psi_apply: maps (params, positions) -> log|psi| of shape (nchains,).
         params: current model parameters.
         positions: current walker positions, shape (nchains, ...).
@@ -148,13 +149,15 @@ def _build_operators_with_stats(
         return multiply_tree_by_scalar(dtheta, 1.0 / sqrt_n)
 
     t = kernel_fn(positions, positions, "ntk", params) / nchains
-    uncentered_trace = jnp.trace(t)
     t = t - jnp.mean(t, axis=0, keepdims=True)
     t = t - jnp.mean(t, axis=1, keepdims=True)
     row_sq = jnp.diag(t)
     centered_trace = jnp.sum(row_sq)
+    # ||mean_i O_i||^2 directly (one vjp), not as trace(uncentered) - trace(centered):
+    # equal in exact arithmetic, but the kernel may already be centred (F4d).
+    mean_grad = vjp_fn(jnp.full((nchains,), 1.0 / nchains, t.dtype))[0]
     stats = {
-        "diag_mean_jac_sq_over_trace": (uncentered_trace - centered_trace)
+        "diag_mean_jac_sq_over_trace": tree_inner_product(mean_grad, mean_grad)
         / centered_trace,
         "diag_walker_rownorm_max_over_median": jnp.max(row_sq) / jnp.median(row_sq),
     }
@@ -269,6 +272,7 @@ def get_same_sampled_spring_unified_step(
     return_diagnostics: bool = False,
     carried_cap: float = 0.0,
     sanitize_probe: bool = False,
+    gram_center_first: bool = False,
 ) -> Callable[
     [Array, P, Array, SameSampledSPRINGUnifiedState],
     Tuple,
@@ -315,11 +319,13 @@ def get_same_sampled_spring_unified_step(
         carried_cap: K for the carried-momentum cap; 0 disables it.
         sanitize_probe: if True, a non-finite probe window ratio cannot reach r_hat and
             beta (see _adaptive_beta_update). On with the safeguard.
+        gram_center_first: centre the Gram rows before the contraction (see
+            `sr_kernel.py`; Phase F step F4d). Off = the original construction.
 
     Returns:
         The step kernel described above.
     """
-    kernel_fn = nt.empirical_kernel_fn(log_psi_apply, vmap_axes=0, trace_axes=())
+    kernel_fn = get_sr_kernel_fn(log_psi_apply, gram_center_first)
     # eta0: the base learning rate (lr at t=0), used by the adaptive-eta scheme to
     # apply the schedule's decay as an outer factor. Evaluated once, eagerly.
     base_lr = float(learning_rate_schedule(jnp.array(0)))
@@ -846,6 +852,7 @@ def initialize_same_sampled_spring_unified(
         return_diagnostics=diagnostics or safeguard,
         carried_cap=carried_cap,
         sanitize_probe=safeguard,
+        gram_center_first=bool(optimizer_config.get("gram_center_first", False)),
     )
 
     def init_state(local_params: P, subkey: PRNGKey) -> SameSampledSPRINGUnifiedState:
