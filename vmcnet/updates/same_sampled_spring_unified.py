@@ -172,6 +172,7 @@ def _adaptive_beta_update(
     checkpoint_idx: Array,
     step: Array,
     p: int,
+    sanitize: bool = False,
 ) -> Tuple[Array, Array, Array, Array, Array]:
     """Slide the probe residual into the buffer and update beta on schedule.
 
@@ -189,6 +190,9 @@ def _adaptive_beta_update(
         checkpoint_idx: adaptive-beta checkpoint counter (int scalar, >= 1).
         step: current step index (int scalar, pre-increment).
         p: lookback window length.
+        sanitize: if True, a non-finite window ratio (the probe residual overflowed, so
+            r_ip = inf/inf = NaN) enters r_hat as 1, the value min(1, inf) gives, so it
+            cannot turn r_hat and beta into NaN. The returned r_ip stays raw.
 
     Returns:
         Tuple (new_buffer, new_r_hat, new_beta, new_checkpoint_idx, r_ip), where
@@ -210,7 +214,8 @@ def _adaptive_beta_update(
     n_new = n_old + 1.0
     alph = jnp.power(n_old, jnp.log(n_old)) / jnp.power(n_new, jnp.log(n_new))
 
-    r_hat_new = alph * r_hat + (1.0 - alph) * jnp.minimum(1.0, r_ip)
+    r_ip_used = jnp.where(jnp.isfinite(r_ip), r_ip, 1.0) if sanitize else r_ip
+    r_hat_new = alph * r_hat + (1.0 - alph) * jnp.minimum(1.0, r_ip_used)
     rho = jnp.clip(1.0 - jnp.power(r_hat_new, 1.0 / p), min=0.0)
     beta_new = (1.0 - rho) / (1.0 + rho)
 
@@ -263,6 +268,7 @@ def get_same_sampled_spring_unified_step(
     adaptive_probe: bool,
     return_diagnostics: bool = False,
     carried_cap: float = 0.0,
+    sanitize_probe: bool = False,
 ) -> Callable[
     [Array, P, Array, SameSampledSPRINGUnifiedState],
     Tuple,
@@ -307,6 +313,8 @@ def get_same_sampled_spring_unified_step(
         adaptive_probe: if True, the probe step uses eta_main instead of probe_lr.
         return_diagnostics: if True, also return the diag dict described above.
         carried_cap: K for the carried-momentum cap; 0 disables it.
+        sanitize_probe: if True, a non-finite probe window ratio cannot reach r_hat and
+            beta (see _adaptive_beta_update). On with the safeguard.
 
     Returns:
         The step kernel described above.
@@ -405,6 +413,7 @@ def get_same_sampled_spring_unified_step(
             state.checkpoint_idx,
             state.step,
             p,
+            sanitize=sanitize_probe,
         )
 
         new_state = SameSampledSPRINGUnifiedState(
@@ -480,6 +489,9 @@ class SafeguardState(NamedTuple):
         snap_a_params, snap_b_params: two alternating parameter snapshots.
         snap_a_z_probe, snap_b_z_probe: the probe iterate at those snapshots.
         snap_a_step, snap_b_step: the step index at which each snapshot was taken.
+        carried_hits: the last `carried_window` steps (oldest first), 1 where the
+            carried momentum exceeded `carried_k` x the target (F3c), else 0. Length 1
+            and unused when the carried trigger is off.
     """
 
     log_step_buffer: Array
@@ -494,6 +506,7 @@ class SafeguardState(NamedTuple):
     snap_b_z_probe: PyTree
     snap_a_step: Array
     snap_b_step: Array
+    carried_hits: Array
 
 
 class SafeguardedState(NamedTuple):
@@ -515,6 +528,9 @@ class SafeguardConfig(NamedTuple):
     snapshot_every: int  # snapshot interval; rewind target is 1-2 intervals old
     beta_cap: float  # beta cap held after a rewind
     hold_steps: int  # how long the cap is held
+    carried_k: float  # a step "hits" if diag_carried_over_eps > carried_k
+    carried_window: int  # trailing window for the hit count; 0 = trigger off
+    carried_count: int  # rewind once the window holds this many hits
 
 
 def _tree_where(cond: Array, a: PyTree, b: PyTree) -> PyTree:
@@ -522,12 +538,12 @@ def _tree_where(cond: Array, a: PyTree, b: PyTree) -> PyTree:
 
 
 def _init_safeguard_state(
-    params: P, core: SameSampledSPRINGUnifiedState, window: int
+    params: P, core: SameSampledSPRINGUnifiedState, cfg: SafeguardConfig
 ) -> SafeguardState:
     """Fresh guard state; both snapshots start at the current params and step."""
     int_zero = jnp.zeros((), jnp.int32)
     return SafeguardState(
-        log_step_buffer=jnp.zeros((window,), jnp.float32),
+        log_step_buffer=jnp.zeros((cfg.window,), jnp.float32),
         n_logged=int_zero,
         last_trigger=jnp.array(-(10**9), jnp.int32),
         hold_until=jnp.array(-1, jnp.int32),
@@ -539,6 +555,7 @@ def _init_safeguard_state(
         snap_b_z_probe=core.z_probe,
         snap_a_step=core.step.astype(jnp.int32),
         snap_b_step=core.step.astype(jnp.int32),
+        carried_hits=jnp.zeros((max(cfg.carried_window, 1),), jnp.int32),
     )
 
 
@@ -557,7 +574,17 @@ def _safeguarded_apply(
     Trigger (from `start_step` on): the pre-clip squared step exceeds `step_ratio` x
     its trailing median over accepted steps, OR the exact-bound ratio exceeds
     `bound_ratio`, OR either is non-finite. Both thresholds are dimensionless and,
-    at 3, never fired on any of the 17 surviving N2-4.0 runs (F1b).
+    at 3, never fired on any of the 17 surviving N2-4.0 runs (F1b). Two more triggers
+    rewind at once, without a skip first:
+
+    - (F3c, when `carried_window` > 0) the carried momentum exceeded `carried_k` x the
+      target on at least `carried_count` of the last `carried_window` steps. In the F3b
+      replays a binding carried cap only slowed the failure, so a cap that keeps
+      binding is used as the alarm. The hit window is cleared on a rewind, and no
+      snapshot is taken while it holds any hit, so the rewind target predates the
+      episode.
+    - The probe residual is non-finite. In F3b the probe overflowed float32 before
+      every capped death; a skip cannot repair it, a rewind resets it.
 
     - First trigger: SKIP. Parameters, momentum and probe are left as they were; only
       the step counter advances (so the learning-rate schedule keeps moving).
@@ -590,8 +617,23 @@ def _safeguarded_apply(
     finite = jnp.isfinite(preclip) & jnp.isfinite(diag["diag_bound_ratio"])
     trig_step = enough & (preclip > cfg.step_ratio * med)
     trig_bound = diag["diag_bound_ratio"] > cfg.bound_ratio
-    trig = (step_idx >= cfg.start_step) & (~finite | trig_step | trig_bound)
-    rewind = trig & (step_idx - guard.last_trigger <= cfg.rewind_within)
+    probe_ok = jnp.isfinite(new_core.residual_buffer[-1])
+    if cfg.carried_window > 0:
+        # NaN counts as a hit: ~(x <= k) is True for NaN
+        hit = ~(diag["diag_carried_over_eps"] <= cfg.carried_k)
+        hits = jnp.concatenate([guard.carried_hits[1:], hit.astype(jnp.int32)[None]])
+        carried_count = jnp.sum(hits)
+        trig_carried = carried_count >= cfg.carried_count
+    else:
+        hits = guard.carried_hits
+        carried_count = jnp.zeros((), jnp.int32)
+        trig_carried = jnp.array(False)
+    trig = (step_idx >= cfg.start_step) & (
+        ~finite | ~probe_ok | trig_step | trig_bound | trig_carried
+    )
+    rewind = trig & (
+        (step_idx - guard.last_trigger <= cfg.rewind_within) | trig_carried | ~probe_ok
+    )
     skip = trig & ~rewind
 
     a_older = guard.snap_a_step <= guard.snap_b_step
@@ -609,6 +651,8 @@ def _safeguarded_apply(
 
     # snapshots: on accepted steps every `snapshot_every`, overwrite the older slot
     take = (~trig) & (step_idx % cfg.snapshot_every == 0)
+    if cfg.carried_window > 0:
+        take = take & (carried_count == 0)
     write_a = take & a_older
     write_b = take & ~a_older
     slot = guard.n_logged % cfg.window
@@ -629,6 +673,7 @@ def _safeguarded_apply(
         snap_b_z_probe=_tree_where(write_b, core.z_probe, guard.snap_b_z_probe),
         snap_a_step=jnp.where(write_a, step_idx, guard.snap_a_step),
         snap_b_step=jnp.where(write_b, step_idx, guard.snap_b_step),
+        carried_hits=jnp.where(rewind, jnp.zeros_like(hits), hits),
     )
     opt_metrics.update(diag)
     opt_metrics.update(
@@ -639,6 +684,9 @@ def _safeguarded_apply(
             "sg_n_rewinds": new_guard.n_rewinds.astype(jnp.float32),
             "sg_step_median": med,
             "sg_beta_used": beta_in,
+            "sg_carried_count": carried_count.astype(jnp.float32),
+            "sg_trigger_carried": (trig & trig_carried).astype(jnp.float32),
+            "sg_probe_bad": (~probe_ok).astype(jnp.float32),
         }
     )
     return params_out, SafeguardedState(core_out, new_guard), opt_metrics
@@ -781,6 +829,9 @@ def initialize_same_sampled_spring_unified(
         snapshot_every=int(optimizer_config.get("safeguard_snapshot_every", 250)),
         beta_cap=float(optimizer_config.get("safeguard_beta_cap", 0.99)),
         hold_steps=int(optimizer_config.get("safeguard_hold_steps", 2000)),
+        carried_k=float(optimizer_config.get("safeguard_carried_k", 10.0)),
+        carried_window=int(optimizer_config.get("safeguard_carried_window", 0)),
+        carried_count=int(optimizer_config.get("safeguard_carried_count", 5)),
     )
 
     step_fn = get_same_sampled_spring_unified_step(
@@ -794,6 +845,7 @@ def initialize_same_sampled_spring_unified(
         bool(optimizer_config.adaptive_probe),
         return_diagnostics=diagnostics or safeguard,
         carried_cap=carried_cap,
+        sanitize_probe=safeguard,
     )
 
     def init_state(local_params: P, subkey: PRNGKey) -> SameSampledSPRINGUnifiedState:
@@ -820,7 +872,7 @@ def initialize_same_sampled_spring_unified(
             if isinstance(optimizer_state, SameSampledSPRINGUnifiedState):
                 optimizer_state = SafeguardedState(
                     optimizer_state,
-                    _init_safeguard_state(params, optimizer_state, sg_cfg.window),
+                    _init_safeguard_state(params, optimizer_state, sg_cfg),
                 )
             return _safeguarded_apply(
                 step_fn,

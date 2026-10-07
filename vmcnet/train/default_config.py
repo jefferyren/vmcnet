@@ -355,6 +355,14 @@ def get_default_vmc_config() -> Dict:
                 "safeguard_snapshot_every": 250,  # rewind target 250-500 steps old
                 "safeguard_beta_cap": 0.99,  # beta cap held after a rewind
                 "safeguard_hold_steps": 2000,
+                # F3c: also rewind (no skip first) once diag_carried_over_eps >
+                # safeguard_carried_k on safeguard_carried_count of the last
+                # safeguard_carried_window steps. Window 0 = this trigger off. With
+                # the safeguard on, a non-finite probe residual also rewinds and a
+                # non-finite probe ratio cannot reach beta.
+                "safeguard_carried_k": 10.0,
+                "safeguard_carried_window": 0,
+                "safeguard_carried_count": 5,
                 # carried_cap (F3b): if > 0, shrink the carried momentum so that
                 # ||A(beta phi)|| <= carried_cap * ||eps|| on each step's walkers.
                 # 0 = off. Calibrated value from the F2 replays: 10.

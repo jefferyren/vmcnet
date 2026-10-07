@@ -1,7 +1,8 @@
 # Campaign log — SS-SPRING vs SPRING vs PRIME-SR
 
 **Handoff document.** Read this first in a new session; it is self-contained. Last
-updated 2026-10-01: added **§5 Phase F**, the plan to stabilise SS-SPRING on stretched
+updated 2026-10-07: §5 Phase F **F3b RESULT** (carried-momentum cap fails). Before
+that, 2026-10-01: added **§5 Phase F**, the plan to stabilise SS-SPRING on stretched
 N2 — recommended steps only, **nothing run yet**. Before that, 2026-09-25, after E19
 settled the stretched-N2 divergence (§4 items 9-15, §5 Phase E). All runs on Savio
 GTX2080TIs.
@@ -959,6 +960,107 @@ precursor; the float32 floor is not.**
     - a full-protocol arm, ≥8 fresh seeds × 100k at the E14 cell, against E14+E15's
       6/8.
 
+**F3b RESULT (`--carried` readout, read 2026-10-07). The cap does NOT prevent the
+catastrophe. It slows the approach, then the run dies through the uncapped probe.**
+
+| state | no cap: first event / end | cap 10: first event / end | cap active (rows) | cap first active |
+|---|---|---|---|---|
+| E14 s0 | 12,780 / 19,073 | 12,810 / 12,871 | 5.6% | 12,659 |
+| E14 s1 | 10,280 / 19,999 (E −106.8) | 10,720 / 10,741 | 38.8% | 10,421 |
+| E14 s2 | 12,370 / 19,999 (E −102.6) | 13,690 / 13,711 | 6.5% | 13,408 |
+| E15 s7 | 12,480 / 19,586 | 12,490 / 12,511 | 10.9% | 10,999 |
+| E15 s6 (from 60k) | 60,780 / 69,999 (E −101.8) | **none / 60,061 — anomalous, see below** | 96.8% | 60,000 |
+| E18 s2 (eta 0.0015) | **none / 19,999** (E −109.044) | **none / 19,999** (E −109.046) | 0.02% (2 rows) | 10,611 |
+
+- **Rate: baseline 5/6 fail, capped 4/5 interpretable states fail.** No effect.
+  - E18 s2 survived in **both** arms, and its cap fired on 2 rows only, so it earns no
+    credit. It also means E18 s2's hazard from the 10k state is ~1/2 per replay (F2's
+    off arm failed, this one did not). F2's "E18 s2-on is the real evidence that F3
+    works" is weaker than written there.
+  - Event epochs are within ±1.6k of the originals in both arms. The capped events are
+    not systematically later.
+- **The cap binds, sustained, and is not enough.** In every capped failure the pre-cap
+  carried/eps sits at 10–250 for the last ~100 rows. Each step the solve rebuilds a
+  momentum whose image on the next walkers is 1.5–25× the K·‖ε̄‖ it was trimmed to.
+  K=10 still lets the carried term be 10× the target, so the rhs stays dominated by it.
+- **What the cap does change: the approach becomes slow.** First crossing of K=10 to
+  event: no cap 43 / 53 / 59 / 45 / 120 rows; cap 151 / 299 / 282 / 1,491 rows. And the
+  event itself changes kind:
+  - no cap: explosive, as before. +3–14 Ha in 2–3 rows, pre-clip ×10³–10⁵, bound ratio
+    4–35, equation residual 10⁵–10⁷, carried 10⁴–10⁶.
+  - cap: a drift. E rises ~2 Ha over ~30–100 rows, variance 10→200, pre-clip only ×10–50,
+    bound ratio ≤2.2, residual ≤200. No float32-runaway signature.
+  - Before a capped event the kernel degrades instead. Gram λ_max climbs 5×10³ → 2×10⁵,
+    walker row-norm max/median goes from 30–80 to 10²–10³ (spikes to 7×10³), and
+    mean-gradient/trace falls 15 → 2. A few walkers come to dominate the Gram.
+  - Reading: the explosive stage-2 numerics are removable, but the **parameters still
+    degrade**. The numerical runaway is a fast amplifier on top of a slower failure, not
+    the whole failure.
+- **Capped arms then die fast, through the probe.**
+  - `probe_r_ip` explodes geometrically for hundreds of rows before each capped event:
+    10¹¹–10¹⁷ at event −30, then `inf`, then `nan`. Implied probe-residual growth is
+    ~1.3–1.6× per step. In the no-cap arms r_ip stays ~1.3 until the event.
+  - The probe runs the same momentum recurrence with the same β and no cap, so it is the
+    uncapped twin of what F3b capped.
+  - `nan` r_ip comes from inf/inf once the probe residual overflows float32. It passes
+    `min(1, r_ip)` as NaN, so the next trigger step (every p=30) makes r_hat and β NaN.
+    All four capped failures end 21–61 rows after the event. The no-cap arms run to
+    19–20k with a wrecked energy instead. This chain is inferred: β is not in the table.
+- **E15 s6 cap arm is anomalous. Do not count it until it is explained.**
+  - It has 63 rows and stops at 60,061 with no event.
+  - Its carried/eps is >20 on its **first** row (median 69 over the run). Its no-cap
+    sibling, from the same 60k checkpoint, never exceeds 5 before 60,638.
+  - The first step's pre-cap carried should not depend on the arm, so the two arms did
+    not start from the same state, or the first rows differ in a way not yet understood.
+    F2 saw the same thing once: E18 s2-off carried 78 from row one, while this run's
+    E18 s2 no-cap starts at ~2.
+  - Read `slurm-f3b-n2-carried-cap-<jobid>_9.out` (case 4, arm 1) for the exit reason
+    and the reloaded checkpoint path.
+- **Still true:** carried/eps is the earliest precursor in every failing trajectory
+  (healthy p99.9 3.5–11). F3b shows that trimming it alone does not stop the failure.
+
+**F3c IMPLEMENTED (2026-10-07), NOT YET RUN: rewind when the cap keeps binding, and
+guard the probe.**
+- **Code** (`same_sampled_spring_unified.py`, keys in `default_config.py`, all inside
+  the existing `safeguard`):
+  - **Carried trigger.** `safeguard_carried_window` W (default 0 = off),
+    `safeguard_carried_count` M (5), `safeguard_carried_k` K (10). Once the pre-cap
+    carried/eps exceeds K on ≥M of the last W steps, the safeguard rewinds **at once**
+    (no skip first). It restores the older snapshot, zeroes φ and φ_probe, and holds
+    β ≤ 0.99 for 2000 steps. The hit window is then cleared. NaN counts as a hit.
+  - **Snapshots predate the episode.** With the trigger on, no snapshot is taken while
+    the window holds any hit.
+  - **Probe guard** (always on with `safeguard`):
+    - a non-finite probe residual rewinds at once;
+    - a non-finite r_ip enters r_hat as 1, which is what `min(1, inf)` gives, so β
+      cannot become NaN. The logged `probe_r_ip` stays raw.
+  - New metrics: `sg_carried_count`, `sg_trigger_carried`, `sg_probe_bad`.
+  - The F3 triggers (pre-clip > 3× median, bound ratio > 3) are unchanged.
+  - Guard state gained a field (`carried_hits`). Checkpoints written by the F2
+    safeguard-on replays will not reload into it. Plain checkpoints (all E-phase) do.
+- **Tests:** 4 new unit tests (sanitised β on probe overflow; carried trigger rewinds
+  without a skip and to a pre-episode snapshot; trigger off by default; non-finite
+  probe rewinds), 64 update tests pass, mypy clean. A CPU smoke run with the trigger
+  forced rewound every 4th step as configured, and reloaded from its own checkpoint.
+- **Calibrate W/M first (zero GPU):** `python slurm/f2_replay_summary.py --sustained`
+  on the F3b logroot (lead times) and on the F2 logroot (false alarms on the healthy
+  safeguard-on replays). The defaults W=50, M=5 assume healthy >K rows stay isolated
+  at ~0.1–0.5%. The readout also prints β (`mu`) in the onset table now, which checks
+  the probe-NaN → β chain on the F3b arms.
+- **Run:** `sbatch --export=ALL,SG_W=50,SG_M=5 slurm/f3c_n2_cap_rewind.sbatch`, the
+  same six states as F3b, array 0-11:
+  - arm 0: safeguard + carried trigger, no cap;
+  - arm 1: the same plus `carried_cap=10`.
+  - ~20–24 GPU-h. Logroot `phase_f/f3c_cap_rewind`.
+- **Readout:** `python slurm/f2_replay_summary.py --carried --logroot
+  .../phase_f/f3c_cap_rewind`. Compare the rate with F3b's no cap 5/6 and cap 4/5.
+- **Reading the result.**
+  - **Most arms finish:** check how many carried-triggered rewinds each needed.
+  - **Rewinds repeat every few hundred steps and the run still fails:** the parameters
+    degrade faster than a rewind undoes, and the next fix is per-walker gradient
+    clipping.
+  - **Arm 0 vs arm 1:** shows whether trimming adds anything once the rewind exists.
+
 **F1b instructions, as originally written:** rerun the updated script on the same
 logdirs and read the per-threshold table.
 - **Survivors never cross some threshold T while diverged runs cross it well before
@@ -1393,6 +1495,12 @@ Two more found while writing the E9/E11 reports:
   - `slurm/f3b_n2_carried_cap.sbatch`: six failing states × {no cap, cap 10}.
   - `f2_replay_summary.py` gained the `--precursors`, `--carried` and `--pattern`
     options.
+- **Phase F F3c (2026-10-07):**
+  - `safeguard_carried_window/_count/_k`: the carried trigger, which rewinds at once.
+    Window 0 = off.
+  - With `safeguard` on, a non-finite probe rewinds and cannot NaN β.
+  - `slurm/f3c_n2_cap_rewind.sbatch`: six failing states × {rewind, rewind + cap 10}.
+  - `f2_replay_summary.py --sustained` calibrates W/M; the onset table now shows `mu`.
 
 ## 9. How to keep this document current
 
@@ -1433,7 +1541,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`). Next action: `sbatch slurm/f3b_n2_carried_cap.sbatch`, then `python slurm/f2_replay_summary.py --carried --logroot .../phase_f/f3b_carried_cap`.** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07. Next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

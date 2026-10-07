@@ -14,14 +14,17 @@ For each replay logdir under LOGROOT it prints:
   4. Onset anatomy (safeguard-off arms): every logged quantity, epoch by epoch, over the
      30 epochs before the first catastrophe -- which one moves first.
 
-Also reports, for runs with carried_cap on, how often the cap was active. The
-original run is read from each replay's reload_config.json.
+Also reports, for runs with carried_cap on, how often the cap was active, and for
+safeguarded runs which rewinds the F3c carried trigger and the probe guard caused. The
+original run is read from each replay's reload_config.json. `--sustained` calibrates
+the F3c trigger (K hits in a trailing window) on any replays with diagnostics on.
 
 Usage (Savio login node, after the array finishes):
     python slurm/f2_replay_summary.py                       # F2/F3 replays
     python slurm/f2_replay_summary.py --precursors --carried
     python slurm/f2_replay_summary.py \
         --logroot /global/scratch/users/$USER/vmcnet_logs/phase_f/f3b_carried_cap
+    python slurm/f2_replay_summary.py --sustained --logroot ...   # F3c calibration
 """
 
 import argparse
@@ -44,6 +47,7 @@ ORIGINALS = {
 }
 ONSET_KEYS = [
     "energy_noclip",
+    "mu",
     "variance_noclip",
     "update_sq_norm_preclip",
     "probe_r_ip",
@@ -96,6 +100,13 @@ def main():
         action="store_true",
         help="print binned medians of the diag_* metrics from the replay start to the "
         "first catastrophe (or the end): is there a slow precursor?",
+    )
+    ap.add_argument(
+        "--sustained",
+        action="store_true",
+        help="calibrate the F3c trigger: for each (window W, count M), how often "
+        "carried/eps > K on >= M of the last W rows fires in healthy rows, and its "
+        "lead",
     )
     ap.add_argument(
         "--carried",
@@ -165,7 +176,15 @@ def main():
                 f"{' ...' if len(t_ep) > 20 else ''}; {len(r_ep)} rewinds at "
                 f"{r_ep[:20].tolist()}"
             )
-        elif ev is not None:
+            for key, label in (
+                ("sg_trigger_carried", "carried-trigger rewinds"),
+                ("sg_probe_bad", "non-finite probe rows"),
+            ):
+                x = load(d, key, start)
+                if x is not None:
+                    rows = np.nonzero(x > 0)[0]
+                    print(f"    {label}: {len(rows)} at {rows[:20].tolist()}")
+        if ev is not None:
             cols = {k: load(d, k, start) for k in ONSET_KEYS}
             cols = {k: x for k, x in cols.items() if x is not None}
             short = {
@@ -182,6 +201,8 @@ def main():
             precursor_table(d, start, ev if ev is not None else last)
         if args.carried:
             carried_table(d, start, ev, last)
+        if args.sustained:
+            sustained_table(d, start, ev, last)
 
 
 PRECURSOR_KEYS = [
@@ -223,6 +244,39 @@ def carried_table(d, start, ev, last):
         lead = (ev - first) if (first is not None and ev is not None) else None
         print(
             f"    K={k:<3} healthy rows above: {n_healthy:<6} first row above: "
+            f"{first}  lead over catastrophe: {lead}"
+        )
+
+
+SUSTAINED_K = 10
+SUSTAINED_GRID = [(20, 3), (50, 3), (50, 5), (50, 10), (100, 5), (100, 10), (100, 20)]
+
+
+def sustained_table(d, start, ev, last):
+    """Calibrate the F3c trigger: carried/eps > K on >= M of the last W rows. Healthy
+    span as in carried_table. Firings are counted as rising edges (the real trigger
+    clears its window on a rewind). Rows logged under a binding cap are pre-cap
+    values, so the F3b cap arms are valid input. In a failing run the "healthy" span
+    can include the start of the approach, so read false alarms off the surviving
+    runs (the F2 safeguard-on replays, E18 s2) and lead times off the failing ones."""
+    c = load(d, "diag_carried_over_eps", start)
+    if c is None:
+        return
+    hit = ~(c[start:] <= SUSTAINED_K)  # NaN counts as a hit, as in the code
+    hi = (ev - 300) if ev is not None else last + 1
+    print(
+        f"  sustained trigger (carried/eps > {SUSTAINED_K}), healthy rows "
+        f"{start}-{hi - 1}:"
+    )
+    for w, m in SUSTAINED_GRID:
+        count = np.convolve(hit.astype(int), np.ones(w, int))[: len(hit)]
+        on = count >= m
+        edges = np.nonzero(on & ~np.concatenate([[False], on[:-1]]))[0] + start
+        n_healthy = int(np.sum(edges < hi))
+        first = int(edges[0]) if len(edges) else None
+        lead = (ev - first) if (first is not None and ev is not None) else None
+        print(
+            f"    W={w:<4} M={m:<3} healthy firings: {n_healthy:<4} first firing: "
             f"{first}  lead over catastrophe: {lead}"
         )
 

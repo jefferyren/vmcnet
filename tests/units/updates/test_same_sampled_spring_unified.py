@@ -633,6 +633,103 @@ def test_safeguard_skips_then_rewinds_and_resets_momentum():
     assert float(m3["sg_beta_used"]) <= 0.99 + 1e-7
 
 
+def test_adaptive_beta_sanitize_keeps_beta_finite_on_probe_overflow():
+    """An inf probe residual gives r_ip = inf/inf = NaN; sanitize keeps beta finite."""
+    p = 3
+    buffer = jnp.full((2 * p,), jnp.inf)
+    args = (
+        buffer,
+        jnp.array(jnp.inf),
+        jnp.array(0.9),
+        jnp.array(0.99),
+        jnp.array(5, jnp.int32),
+        jnp.array(2 * p, jnp.int32),  # a trigger step
+        p,
+    )
+    raw = _adaptive_beta_update(*args)
+    assert not bool(jnp.isfinite(raw[2]))  # the F3b failure: beta becomes NaN
+    _, r_hat, beta, _, r_ip = _adaptive_beta_update(*args, sanitize=True)
+    assert bool(jnp.isfinite(r_hat)) and bool(jnp.isfinite(beta))
+    assert not bool(jnp.isfinite(r_ip))  # the logged ratio stays raw
+    # NaN enters r_hat exactly as any growing residual (r_ip > 1, clipped to 1) would
+    ref = _adaptive_beta_update(
+        jnp.array([1.0, 1.0, 1.0, 1.0, 2.0, 2.0]), jnp.array(2.0), *args[2:]
+    )
+    np.testing.assert_allclose(r_hat, ref[1], rtol=1e-6)
+
+
+def test_safeguard_carried_trigger_rewinds_without_skip_and_predates_episode():
+    """Test the F3c trigger: carried_count hits in the window rewind at once.
+
+    No snapshot is taken while the window holds a hit, and the window is cleared.
+    """
+    cfg = _phase_f_config(
+        safeguard=True,
+        safeguard_step_ratio=1e30,
+        safeguard_bound_ratio=1e30,
+        safeguard_start_step=0,
+        safeguard_snapshot_every=1,
+        safeguard_carried_k=-1.0,  # every step is a hit
+        safeguard_carried_window=4,
+        safeguard_carried_count=3,
+        mu=0.995,
+    )
+    fn, state, key, params, positions = _init_update_fn(cfg)
+    p_cur, s_cur = params, state
+    for i in range(2):  # hits 1, 2: no trigger, and no snapshot (the window has hits)
+        p_cur, _, s_cur, m, _ = fn(p_cur, positions, s_cur, key)
+        assert float(m["sg_trigger"]) == 0.0
+        assert float(m["sg_carried_count"]) == i + 1
+    assert int(s_cur.guard.snap_a_step) == 0 and int(s_cur.guard.snap_b_step) == 0
+
+    moved = jax.tree_util.tree_map(lambda x: x + 1.0, p_cur)
+    p3, _, s3, m3, _ = fn(moved, positions, s_cur, key)  # hit 3: rewind, no skip
+    assert float(m3["sg_rewind"]) == 1.0 and float(m3["sg_trigger_carried"]) == 1.0
+    assert int(s3.guard.n_triggers) == 1 and int(s3.guard.n_rewinds) == 1
+    for a, b in zip(jax.tree_util.tree_leaves(p3), jax.tree_util.tree_leaves(params)):
+        np.testing.assert_allclose(a, b)  # back before the episode
+    for leaf in jax.tree_util.tree_leaves((s3.core.phi, s3.core.phi_probe)):
+        assert bool(jnp.all(leaf == 0.0))
+    assert int(jnp.sum(s3.guard.carried_hits)) == 0
+
+
+def test_safeguard_carried_trigger_off_by_default():
+    """With the default window 0 the hit count never moves and nothing fires."""
+    cfg = _phase_f_config(
+        safeguard=True,
+        safeguard_step_ratio=1e30,
+        safeguard_bound_ratio=1e30,
+        safeguard_start_step=0,
+        safeguard_carried_k=-1.0,
+    )
+    fn, state, key, params, positions = _init_update_fn(cfg)
+    for _ in range(3):
+        params, _, state, m, _ = fn(params, positions, state, key)
+        assert float(m["sg_trigger"]) == 0.0 and float(m["sg_carried_count"]) == 0.0
+
+
+def test_safeguard_rewinds_at_once_on_a_non_finite_probe():
+    """A probe that has overflowed is reset by an immediate rewind."""
+    cfg = _phase_f_config(
+        safeguard=True,
+        safeguard_step_ratio=1e30,
+        safeguard_bound_ratio=1e30,
+        safeguard_start_step=0,
+        mu=0.995,
+    )
+    fn, state, key, params, positions = _init_update_fn(cfg)
+    broken = state._replace(
+        phi_probe=jax.tree_util.tree_map(lambda x: jnp.full_like(x, jnp.inf), params)
+    )
+    p1, _, s1, m1, _ = fn(params, positions, broken, key)
+    assert float(m1["sg_probe_bad"]) == 1.0 and float(m1["sg_rewind"]) == 1.0
+    for leaf in jax.tree_util.tree_leaves((s1.core.phi_probe, s1.core.z_probe)):
+        assert bool(jnp.all(jnp.isfinite(leaf)))
+    _, _, s2, m2, _ = fn(p1, positions, s1, key)
+    assert float(m2["sg_probe_bad"]) == 0.0
+    assert bool(jnp.isfinite(s2.core.beta))
+
+
 def _cap_setup():
     params, positions, _ = _operator_setup(nchains=9)
     phi = jax.tree_util.tree_map(
@@ -711,3 +808,4 @@ def test_default_config_carries_phase_f_keys():
     assert block["diagnostics"] is False
     assert block["safeguard"] is False
     assert block["carried_cap"] == 0.0
+    assert block["safeguard_carried_window"] == 0
