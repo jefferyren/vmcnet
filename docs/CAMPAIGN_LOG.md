@@ -1018,6 +1018,53 @@ catastrophe. It slows the approach, then the run dies through the uncapped probe
     and the reloaded checkpoint path.
 - **Still true:** carried/eps is the earliest precursor in every failing trajectory
   (healthy p99.9 3.5–11). F3b shows that trimming it alone does not stop the failure.
+- **E15 s6 cap arm, EXPLAINED (2026-10-07, from its .out, its NaN checkpoint and
+  per-row logs):**
+  - Both arms reloaded the same `60000.npz`. On row 0 they agree on every input:
+    carried/eps 3.633, β 0.9968, r_hat, probe residual 1.2e-4, ‖ε̄‖ 0.3809, walker
+    stats.
+  - **But their first update already differs:** ‖φ_new‖ is 45.4 (cap) vs 21.1 (no
+    cap). The bound ratio is 1.65 vs 0.77, and the pre-clip step 1.7e-4 vs 3.6e-5. The
+    cap was inactive on that row (scale 1), and its code path is exact at scale 1. The
+    only difference is the compiled program, so this is float32 rounding.
+  - That size fits the Gram noise floor. Eigenvalues below the floor (min eig ≈
+    −0.005, clipped to 0) are inverted at 1/λ = 1000. The resulting contribution to
+    φ is up to about ‖ε̄‖·√floor/λ ≈ 0.4·0.07/0.001 ≈ 28, the same order as the
+    observed gap (24) and as φ itself.
+  - Afterwards carried/eps is 41–85 from row 1, and the cap holds it at 10 (scale
+    0.12–0.24). The probe residual grows ~8× per step from row 3 and overflows by
+    ~row 30. r_hat and β become NaN at the 60,060 β update, and the parameters become
+    NaN at 60,062.
+  - The NaN checkpoint confirms it: params and φ are finite, while z_probe, φ_probe,
+    32/60 residual-buffer entries, r_hat and β are NaN. **This is the first direct
+    confirmation of the probe → β NaN chain.**
+  - **Count it as a probe death, not a cap failure.**
+- **This reopens the noise-floor reading.** The PRECURSOR RESULT called the float32
+  floor "background, not the trigger". But one step from an identical state can double
+  ‖φ‖ on rounding alone. That would explain why replays never reproduce (F2) and why
+  the hazard is stochastic per replay. It would also explain carried/eps: the
+  sub-floor part of φ is fitted to the old walkers' noise eigenvectors and would not
+  carry over to fresh walkers. **Not yet verified.** The test is a one-step check from
+  `60000.npz`: split φ_new into sub-floor and above-floor eigendirections, and redo
+  the solve in float64.
+- **One-step check written (2026-10-07): `slurm/f4_one_step_check.py`.** It needs no
+  training. It rebuilds the model from the original run's `config.json`, loads the
+  checkpoint and prints:
+  1. the module step, cap off vs the cap path at scale 1;
+  2. the split φ_new = βφ + φ_sub + φ_hi at floor = |min eig|;
+  3. walker permutations, which are identical in exact arithmetic;
+  4. a float64 eigh of the float32 Gram;
+  5. a solve on half the walkers applied to the other half;
+  6. a full float64 run, compared via `--compare`.
+
+  The hypothesis predicts:
+  - ‖φ_sub‖ is O(20);
+  - only φ_sub moves under permutation;
+  - φ_sub does not carry over to held-out walkers, while φ_hi does;
+  - float64 removes φ_sub.
+
+  Run it on a GPU node, ~10 min. Only the toy plumbing has been tested locally, on a
+  CPU quicktest checkpoint.
 
 **F3c IMPLEMENTED (2026-10-07), NOT YET RUN: rewind when the cap keeps binding, and
 guard the probe.**
