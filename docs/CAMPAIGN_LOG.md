@@ -1065,6 +1065,45 @@ catastrophe. It slows the approach, then the run dies through the uncapped probe
 
   Run it on a GPU node, ~10 min. Only the toy plumbing has been tested locally, on a
   CPU quicktest checkpoint.
+- **ONE-STEP RESULT, E15 s6 `60000.npz`, float32 (run 2026-10-07). The float64 run
+  ran out of memory on the 2080 Ti (local energies alone need 9 GB).**
+  - **[1] The 21-vs-45 split did not reproduce.** Cap off and the inactive cap path
+    give the same ‖φ_new‖ = 20.78 on this node. The doubling in the F3b replay is still
+    unexplained. Candidates: GPU or node nondeterminism, or a walker set where the
+    solve is more sensitive.
+  - **[2] Spectrum:**
+    - max 4147, min −0.0056;
+    - 278 eigenvalues are negative, 358 below the damping, and **562 of 1000 below the
+      floor**;
+    - the new part of each step is ‖φ_sub‖ 8.1 vs ‖φ_hi‖ 4.0, on top of ‖βφ_old‖ 21.5;
+    - the estimate ‖ε‖√floor/λ = 30 is an upper bound; the measured value is 8.
+  - **[3] Walker permutations,** which change nothing in exact arithmetic:
+    - ‖Δφ_new‖ is 2.7–3.1, about a third of each step's new part;
+    - φ_sub moves by ~40% of its norm, φ_hi by ~25%;
+    - so the sub-floor part is the most sensitive, but not the only one.
+  - **[4] A float64 eigh of the float32 Gram leaves min eig at −0.0056** (263 negative).
+    The error is in the float32 Gram matrix itself, not the eigensolve.
+  - **[5] Held-out half:**
+    - φ_sub transfers worse than φ_hi (ratio 1.84 vs 1.21);
+    - ‖A_fit φ_sub‖ = 5.1 is already several times the target on its own walkers, so
+      the solve is numerically wrong in those directions;
+    - next-step carried/eps on fully fresh walkers is 22.7.
+  - **Reading:** the float32 Gram's error floor is ~5.6× the damping. More than half of
+    the spectrum and about two-thirds of each step's new part come from inside that
+    floor. Healthy runs' equation residual of ~2–3×‖ε‖ is presumably this error, not
+    "tracking carried".
+  - **Prime suspect: centring after the product.** The uncentered kernel is ~15–20×
+    the centred part (`diag_mean_jac_sq_over_trace`), so the subtraction cancels
+    float32 digits.
+  - **Section [4b] added** (replaces the float64 run). It rebuilds the Gram from
+    explicit float32 gradient rows three ways: centred after, centred first, and
+    float64. For each it prints min eig, the step, and the equation residual. On the
+    toy it matches the module kernel to 1e-5.
+  - Decides the fix:
+    - **centre-first fixes it:** a cheap float32 fix to the Gram construction;
+    - **only float64 fixes it:** float64 accumulation, or damping above the floor
+      (F4c);
+    - **neither changes the step:** the floor is not the problem.
 
 **F3c IMPLEMENTED (2026-10-07), NOT YET RUN: rewind when the cap keeps binding, and
 guard the probe.**

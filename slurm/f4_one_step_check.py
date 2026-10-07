@@ -19,8 +19,15 @@ on one state, with no training:
      rounding or the kernel's accumulation?
   5. Held-out walkers: solve on half the walkers, apply the pieces to the other half.
      Hypothesis: ||A_heldout phi_sub|| >> ||A_fit phi_sub||, unlike phi_hi.
+  4b. Gram rebuilt from explicit float32 per-walker gradient rows, three ways:
+     float32 centred AFTER the product (as the module does: the uncentered kernel is
+     dominated by the mean gradient, ~15-20x the centred part, so centring cancels),
+     float32 centred FIRST, and float64 (the reference). For each: the spectrum, the
+     step, and the equation residual ||A A^T d - (rhs - damping d - mean d)|| / ||eps||
+     that an exact solve makes 0. Host numpy; needs ~4 GB of host RAM (-c 4).
   6. With --dtype float64 (second run): the whole step in float64, compared with the
-     float32 run's saved vectors (--compare).
+     float32 run's saved vectors (--compare). Does NOT fit on a 2080 Ti (local
+     energies alone need 9 GB); run it on CPU if at all. 4b answers the same question.
 
 Usage (Savio GPU node; see the srun line in docs/CAMPAIGN_LOG.md, F3b RESULT):
     python slurm/f4_one_step_check.py --dtype float32 --out f4_e15s6_f32.npz
@@ -49,6 +56,9 @@ def main():
     )
     ap.add_argument("--out", default=None, help="save vectors here (.npz)")
     ap.add_argument("--compare", default=None, help="float32 .npz to compare against")
+    ap.add_argument("--no-jacobian", action="store_true", help="skip section 4b")
+    ap.add_argument("--chunk", type=int, default=20, help="walkers per gradient batch")
+    ap.add_argument("--block", type=int, default=20000, help="params per Gram block")
     args = ap.parse_args()
 
     import jax
@@ -276,6 +286,75 @@ def main():
         f"{nrm(ps64):.4g}  ||phi_hi|| {nrm(ph64):.4g}  ||d phi_hi|| vs [2] "
         f"{nrm(ph64 - phi_hi):.4g}"
     )
+
+    # ---- 4b. Gram from explicit gradient rows: centring order and precision ----
+    if not args.no_jacobian:
+        rhs64 = np.asarray(ref["rhs"], np.float64)
+
+        def eq_resid(d):
+            img = apply_A_flat(params, pos, apply_AT_flat(params, pos, jnp.asarray(d)))
+            d = np.asarray(d, np.float64)
+            target = rhs64 - damping * d - d.mean()
+            return nrm(np.asarray(img, np.float64) - target) / eps_norm
+
+        def solve_with(t):
+            vals, vecs = np.linalg.eigh(np.asarray(t, np.float64))
+            w = (vecs.T @ rhs64) / (np.maximum(vals, 0.0) + damping)
+            return vals, vecs @ w
+
+        grad_rows = jax.jit(
+            jax.vmap(
+                lambda x, p_: ravel_pytree(
+                    jax.grad(lambda q: log_psi_apply(q, x[None])[0])(p_)
+                )[0],
+                in_axes=(0, None),
+            )
+        )
+        rows = np.concatenate(
+            [
+                np.asarray(grad_rows(pos[i : i + args.chunk], params))
+                for i in range(0, n, args.chunk)
+            ]
+        )
+        mean64 = rows.mean(axis=0, dtype=np.float64)
+
+        def gram_from_rows(center_first, dt):
+            t = np.zeros((n, n), dt)
+            for k in range(0, rows.shape[1], args.block):
+                b = rows[:, k : k + args.block].astype(dt)
+                if center_first:
+                    b = b - mean64[k : k + args.block].astype(dt)
+                t += b @ b.T
+            if not center_first:
+                t = t - t.mean(axis=0, keepdims=True)
+                t = t - t.mean(axis=1, keepdims=True)
+            return t / dt(n) + dt(1.0) / dt(n)
+
+        variants = [
+            ("module kernel (f32)", np.asarray(ref["gram"])),
+            ("rows f32, centre after", gram_from_rows(False, np.float32)),
+            ("rows f32, centre first", gram_from_rows(True, np.float32)),
+            ("rows f64 (reference)", gram_from_rows(True, np.float64)),
+        ]
+        del rows
+        _, d_ref = solve_with(variants[-1][1])
+        step_ref = np.asarray(apply_AT_flat(params, pos, jnp.asarray(d_ref, dtype)))
+        print(
+            f"\n[4b] Gram from explicit gradient rows ({len(mean64)} params); "
+            f"step and equation residual per variant (residual 0 = exact solve):"
+        )
+        for label, t in variants:
+            vals, d = solve_with(t)
+            step = np.asarray(apply_AT_flat(params, pos, jnp.asarray(d, dtype)))
+            print(
+                f"    {label:24s} min eig {vals.min():10.3g}  # < 0 "
+                f"{int((vals < 0).sum()):4d}  # < damping "
+                f"{int((vals < damping).sum()):4d}  ||phi_new|| "
+                f"{nrm(step + beta_phi):8.4g}  ||d step vs f64|| "
+                f"{nrm(step - step_ref):8.4g}  eq. residual "
+                f"{eq_resid(jnp.asarray(d, dtype)):8.4g}"
+            )
+        print(f"    (||step|| of the f64 reference: {nrm(step_ref):.4g})")
 
     # ---- 5. held-out walkers ----
     h = n // 2
