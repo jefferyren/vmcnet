@@ -1,7 +1,9 @@
 # Campaign log — SS-SPRING vs SPRING vs PRIME-SR
 
 **Handoff document.** Read this first in a new session; it is self-contained. Last
-updated 2026-10-07: §5 Phase F **F3b RESULT** (carried-momentum cap fails). Before
+updated 2026-10-08: §5 Phase F **F4d RESULT** (centre-first Gram fixes the float32
+numerics but not the catastrophe: 6/6 fail; the probe diverges before every event while
+β stays frozen at ~0.997). Before that, 2026-10-07: **F3b RESULT** (carried-momentum cap fails). Before
 that, 2026-10-01: added **§5 Phase F**, the plan to stabilise SS-SPRING on stretched
 N2 — recommended steps only, **nothing run yet**. Before that, 2026-09-25, after E19
 settled the stretched-N2 divergence (§4 items 9-15, §5 Phase E). All runs on Savio
@@ -1157,6 +1159,118 @@ catastrophe. It slows the approach, then the run dies through the uncapped probe
     The baseline is the F3b no-cap arms (5/6 failed). Readout: `f2_replay_summary.py
     --carried --logroot .../phase_f/f4d_center_first`.
   - **F3c is on hold** pending this result.
+- **F4d ONE-STEP CHECK on N2 (E15 s6 60000, GPU, 2026-10-08):**
+
+  | Gram | min eig | # < 0 | ‖Δstep vs f64‖ (‖step‖ 5.98) |
+  |---|---|---|---|
+  | module kernel (old) | −0.0056 | 263 | 4.95 |
+  | **F4d kernel** | −0.00054 | 121 | **0.65** |
+  | rows f32, centre first (host) | 9.4e-6 | 0 | 0.066 |
+
+  - **F4d cuts the step error 7.6×**, from ~83% to ~11% of the step, but not the 75×
+    the explicit centre-first rows reach.
+  - The module step with F4d gives ‖φ_new‖ 20.42 vs 20.32 (f64), and min eig
+    −0.00044. The old code gives 20.76.
+  - **This is not the cancellation coming back.** On a CPU toy with mean/centred =
+    1538, the F4d kernel equals explicit centre-first to 1e-7, while centre-after is
+    2.6e-4. Turning off nt's `_j_rules`/`_s_rules` changes nothing.
+  - The leftover floor of −5e-4 ≈ float32 eps × λ_max (1.2e-7 × 4147). That points to
+    the GPU's float32 contraction itself, whereas host numpy sgemm on the same rows
+    gives no negatives. **Unverified.** The test would be the same centred rows
+    contracted on the GPU.
+  - The leftover floor is now below the damping (5.4e-4 < 1e-3).
+  - **The compile sensitivity reproduced on the same node:** the inactive cap path gave
+    ‖φ_new‖ 21.05 and min eig −0.0084, vs 20.76 and −0.0056 with the cap off. This
+    is how the F3b arms split at row 0.
+  - **Decision: run the F4d replay as is.** Whether an 11% per-step error is small
+    enough is the empirical question. If F4d still fails, the next lever is the
+    contraction precision: float64 or compensated accumulation of the centred Gram.
+
+**F4d RESULT (`--carried` readout, read 2026-10-08). Centring first does NOT prevent the
+catastrophe: 6/6 fail, vs 5/6 for the F3b no-cap baseline. It does fix the numerics, so
+the cause is dynamical: a momentum instability that the probe sees and the β controller
+cannot act on.**
+
+| state | F3b no cap: first event | F4d: first event | F4d healthy carried/eps median / p99.9 / max |
+|---|---|---|---|
+| E14 s0 | 12,780 | 11,150 | 0.99 / 3.42 / 4.3 |
+| E14 s1 | 10,280 | 10,350 | 2.39 / 4.49 / 4.49 (only 50 healthy rows) |
+| E14 s2 | 12,370 | 12,810 | 1.04 / 2.75 / 3.33 |
+| E15 s6 (from 60k) | 60,780 | 60,080 | — (no healthy window) |
+| E15 s7 | 12,480 | 11,460 | 1.10 / 3.19 / 4.2 |
+| E18 s2 (eta 0.0015) | none | 16,360 | 1.05 / 3.15 / 16.4 |
+
+- **No benefit.** Event epochs land within ±1.6k of the baseline, earlier in 3/5.
+  E18 s2 now stands at 2 failures in 4 replays (F2 off fail, F3b both arms survive,
+  F4d fail), so its hazard from the 10k state is about 1/2.
+- **F4d did fix the numerics.**
+  - The Gram min eig sits at −2e-4 to −1e-3 through every approach, below the damping
+    (1e-3). Before F4d it was −0.005 to −0.010. It only blows up at the event row.
+  - The healthy carried/eps tail collapsed: median ~1.0 and p99.9 2.8–3.4. The K=10
+    calibration (2026-10-04) had median 2.1–3.9, p99.9 8.6–11.3 and max 23–33.5. The
+    old excess was the sub-floor part of φ, fitted to noise eigenvectors, and it does
+    not carry over to fresh walkers. That fits the one-step check.
+  - **The bound ratio stays at 0.47–0.75 on every approach row** until the event row,
+    in all six runs. The step obeys SPRING's exact-arithmetic bound while carried/eps
+    climbs from ~15 to ~300. The approach is not float32 runaway.
+- **The approach is unchanged in shape.** carried/eps crosses K=10 35–67 rows before
+  the event and K=50 9–26 rows before. Equation residual tracks it at 1.0–1.4×. Then
+  there is the usual 2–3 row explosion: pre-clip ×10⁴–10⁶, λ_max ×50–500, bound ratio
+  4–35. λ_max, walker row-norm ratio and mean-grad/trace stay flat until 1–2 rows
+  before the event. There is no slow kernel degradation like in the capped arms.
+- **New: the probe diverges before every event.** In F3b's no-cap arms r_ip stayed
+  ~1.3 until the event. Under F4d it climbs over the last ~30 rows in all six: s0
+  1.3→38, s1 1.5→930, s2 1.8→530, s6 1.2→730, s7 1.0→53, E18 s2 2.2→12.6.
+  - r_ip is a ratio of squared-residual sums over adjacent p=30 windows, so r_ip ≈ g⁶⁰
+    for per-step growth g. r_ip 10–1000 means the probe residual grows 4–12% per step.
+  - The probe is a synthetic SPRING solve with a fixed target on the same A_k and the
+    same β. So **the momentum recurrence itself is expanding on this A_k sequence**,
+    whatever E_L does. That fits E16 (fixed SPRING at μ=0.995 fails 2/3, at 0.99 3/3
+    survive).
+- **The β controller cannot respond, and it leans the wrong way.**
+  - r_ip enters r_hat as min(1, r_ip). With r_hat → 1, ρ → 0 and β → 1. So a growing
+    probe pushes β *up*. μ visibly creeps during the approach: s0 0.9963→0.9964,
+    s1 0.9968→0.9969, s7 0.9957→0.9958.
+  - The EMA weight per trigger is 1−α ≈ 2 ln n / n, ~3% at step 11k and ~0.7% at 60k.
+    β is effectively frozen at 0.9957–0.9971 for the whole late run.
+- **The energy dips below physical before 5/6 events:** −109.1 → −110.1 (s1), −110.0
+  (s2), −109.8 (s7), −109.6 (E18 s2), −109.4 (s0). The dissociation limit is
+  −109.18 and the MLR reference −109.20. A 0.5–0.9 Ha variational violation on the
+  sampled walkers means the parameters are being fitted to the walkers, the same
+  reading as carried/eps. Not yet checked: whether pre-F4d onsets show the same dip.
+- **Ranking of next levers after this result:**
+  1. **β ceiling replay (decisive, cheap).** The same six states, F4d on, β capped at
+     0.99 for the whole replay. This needs a small new key, since `safeguard_beta_cap`
+     only acts during a post-rewind hold. If the events vanish, momentum is confirmed
+     as the mechanism. The cost in energy is the question, since survivors' 12.3 mHa
+     may depend on β ~0.997.
+  2. **A stability channel in the controller.** Let raw r_ip > 1, sustained over a
+     window, cut β (or reset φ) instead of being clipped to 1. The probe gives 10–30
+     rows of warning at r_ip > 2. This keeps adaptive β where it is stable.
+  3. **F3c rewind on sustained carried/eps.** It is now better calibrated: under F4d
+     the healthy max is ≤ 4.5 in 5/6 states (E18 s2 has one row at 16.4), and K=10
+     gives 35–67 rows of lead. Run it with F4d on and recalibrate W/M on this logroot.
+  4. **Float64 contraction: deprioritised.** The approach happens inside the exact
+     bound and with the Gram floor below the damping, so the remaining ~11% step
+     error is not what grows.
+- **Route chosen (2026-10-08): a noise-aware β target (F4a), not a fixed `beta_max`.**
+  Turning on `adaptive_eta` + `adaptive_probe` (faithful Kaczmarz++) is already known to
+  drive β to 1 too aggressively. The probe's system is noise-free and consistent, so the
+  Kaczmarz++ rule prescribes β → 1 there. Today's β ≈ 0.997 is held only by an
+  accidental negative feedback: `probe_lr` is fixed at the learning rate, and
+  1 − β ≈ 2–4× `probe_lr` (§4 item 14).
+- **Step 0 tooling (2026-10-08, not yet run on Savio):**
+  - `f2_replay_summary.py --rip`: r_ip distribution in healthy rows, plus healthy
+    firings and lead for each rule "r_ip > T on ≥ M of the last W rows". Run it on
+    this logroot.
+  - `slurm/rip_alarm_scan.py --logdirs "<glob>"`: the same rules over every original
+    SS-SPRING run, one line per run and a per-group total. Firings on a group that
+    never fails are false alarms. It also prints the median β per run.
+  - Caveat: the originals predate F4d.
+  - Both were tested on synthetic logdirs only.
+- **Open:** s0, s1 and s2 end at 18,931 / 18,571 / 15,764, and E15 s6 at 68,341.
+  Probably probe NaN deaths (the safeguard and its sanitizer are off), but check
+  the .out files.
 - **Original F4d proposal: centre the Jacobian before the contraction.**
   - Cheapest form: compute the mean gradient m once per step (one vjp with ones/n).
   - Take the kernel of g(θ, x) = log ψ(θ, x) − ⟨stop_gradient(m), θ⟩, whose
@@ -1693,7 +1807,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. Next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. F4d one-step check done (step error 83% -> 11%) and F4d replay run 2026-10-08: 6/6 still fail; numerics fixed (bound ratio < 1 through every approach) but the probe diverges before every event while beta is frozen at ~0.997 (see Phase F, F4d RESULT). Next action: beta-ceiling replay (F4d on, beta <= 0.99, needs a new key), then a controller stability channel or F3c with F4d on. Superseded next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

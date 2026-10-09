@@ -17,7 +17,9 @@ For each replay logdir under LOGROOT it prints:
 Also reports, for runs with carried_cap on, how often the cap was active, and for
 safeguarded runs which rewinds the F3c carried trigger and the probe guard caused. The
 original run is read from each replay's reload_config.json. `--sustained` calibrates
-the F3c trigger (K hits in a trailing window) on any replays with diagnostics on.
+the F3c trigger (K hits in a trailing window) on any replays with diagnostics on, and
+`--rip` does the same for the probe's raw window ratio r_ip. slurm/rip_alarm_scan.py
+runs the r_ip calibration over original (non-replay) runs on every system.
 
 Usage (Savio login node, after the array finishes):
     python slurm/f2_replay_summary.py                       # F2/F3 replays
@@ -25,6 +27,7 @@ Usage (Savio login node, after the array finishes):
     python slurm/f2_replay_summary.py \
         --logroot /global/scratch/users/$USER/vmcnet_logs/phase_f/f3b_carried_cap
     python slurm/f2_replay_summary.py --sustained --logroot ...   # F3c calibration
+    python slurm/f2_replay_summary.py --rip --logroot ...         # r_ip alarm calib.
 """
 
 import argparse
@@ -113,6 +116,13 @@ def main():
         action="store_true",
         help="per-row calibration of diag_carried_over_eps = ||A(beta phi)||/||eps||: "
         "distribution in healthy rows, and first row above each threshold",
+    )
+    ap.add_argument(
+        "--rip",
+        action="store_true",
+        help="per-row calibration of the probe's raw window ratio probe_r_ip: "
+        "distribution in healthy rows, and for each (T, W, M) rule (r_ip > T on >= M "
+        "of the last W rows) its healthy firings and lead",
     )
     args = ap.parse_args()
 
@@ -203,6 +213,8 @@ def main():
             carried_table(d, start, ev, last)
         if args.sustained:
             sustained_table(d, start, ev, last)
+        if args.rip:
+            rip_table(load(d, "probe_r_ip"), start, ev, last)
 
 
 PRECURSOR_KEYS = [
@@ -269,15 +281,95 @@ def sustained_table(d, start, ev, last):
         f"{start}-{hi - 1}:"
     )
     for w, m in SUSTAINED_GRID:
-        count = np.convolve(hit.astype(int), np.ones(w, int))[: len(hit)]
-        on = count >= m
-        edges = np.nonzero(on & ~np.concatenate([[False], on[:-1]]))[0] + start
+        edges = firing_edges(hit, w, m) + start
         n_healthy = int(np.sum(edges < hi))
         first = int(edges[0]) if len(edges) else None
         lead = (ev - first) if (first is not None and ev is not None) else None
         print(
             f"    W={w:<4} M={m:<3} healthy firings: {n_healthy:<4} first firing: "
             f"{first}  lead over catastrophe: {lead}"
+        )
+
+
+def firing_edges(hit, w, m):
+    """Rows (indices into `hit`) where ">= m hits in the last w rows" switches on.
+    Counted as rising edges: a sustained episode fires once."""
+    count = np.convolve(hit.astype(int), np.ones(w, int))[: len(hit)]
+    on = count >= m
+    return np.nonzero(on & ~np.concatenate([[False], on[:-1]]))[0]
+
+
+# (T, W, M): r_ip > T on >= M of the last W rows. (T, 1, 1) is the bare threshold.
+# r_ip is itself a ratio over two adjacent p=30 windows, so consecutive rows are
+# strongly correlated and M counts rows, not independent tests.
+RIP_RULES = [
+    (1.5, 1, 1),
+    (1.5, 30, 20),
+    (2, 1, 1),
+    (2, 10, 5),
+    (2, 30, 10),
+    (3, 1, 1),
+    (3, 10, 5),
+    (5, 1, 1),
+]
+
+
+def rip_rules(r, start, hi, ev):
+    """For each RIP_RULES entry: (firings in the healthy rows [start, hi), first firing
+    at or after start, lead of that first firing over the catastrophe `ev`). A
+    non-finite r_ip (the probe overflowed) counts as a hit."""
+    out = []
+    for t, w, m in RIP_RULES:
+        edges = firing_edges(~(r[start:] <= t), w, m) + start
+        first = int(edges[0]) if len(edges) else None
+        lead = (ev - first) if (first is not None and ev is not None) else None
+        out.append((int(np.sum(edges < hi)), first, lead))
+    return out
+
+
+def rip_summary(r, start, hi):
+    """Distribution of r_ip over the healthy rows [start, hi): median, p99, p99.9, max,
+    the fraction of rows above 1 (probe residual growing over the last window) and the
+    longest unbroken run of such rows."""
+    h = r[start:hi]
+    h = h[np.isfinite(h)]
+    if not len(h):
+        return None
+    above = h > 1.0
+    longest, cur = 0, 0
+    for a in above:
+        cur = cur + 1 if a else 0
+        longest = max(longest, cur)
+    return dict(
+        median=np.median(h),
+        p99=np.percentile(h, 99),
+        p999=np.percentile(h, 99.9),
+        max=h.max(),
+        frac_above_1=above.mean(),
+        longest_above_1=longest,
+    )
+
+
+def rip_table(r, start, ev, last):
+    """Per-row probe_r_ip. Healthy span as in carried_table. Read false alarms off the
+    surviving runs and lead times off the failing ones."""
+    if r is None:
+        return
+    hi = (ev - 300) if ev is not None else last + 1
+    st = rip_summary(r, start, hi)
+    if st is not None:
+        print(
+            f"  r_ip, healthy rows {start}-{hi - 1}: median {st['median']:.3g}, "
+            f"p99 {st['p99']:.3g}, p99.9 {st['p999']:.3g}, max {st['max']:.3g}; "
+            f"rows > 1: {100 * st['frac_above_1']:.1f}%, longest run > 1: "
+            f"{st['longest_above_1']}"
+        )
+    for (t, w, m), (n_healthy, first, lead) in zip(
+        RIP_RULES, rip_rules(r, start, hi, ev)
+    ):
+        print(
+            f"    r_ip > {t:<3} on >= {m:<2} of {w:<2} rows  healthy firings: "
+            f"{n_healthy:<4} first firing: {first}  lead over catastrophe: {lead}"
         )
 
 
