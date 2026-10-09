@@ -1318,6 +1318,131 @@ cannot act on.**
     it should bind rarely if the momentum stays aligned with the target (cos > 0.5).
     In the F4d approach, carried/eps reaches 15–300, so it should bind hard there. Both
     are unverified; this run measures them.
+
+**F5 RESULT (`--carried --guard` readout, read 2026-10-09). The β\* guard stops the
+catastrophe: 6/6 N2 replays reach their end epoch with no event (F4d: 6/6 failed). But it
+is not a rare brake. It binds on ~100% of rows on every system, failing and stable alike,
+and cuts the applied momentum from β ≈ 0.997 to ~0.5 (N2-4.0, N2-eq, CO) or ~0.2–0.3
+(H4, N, O, carbon). F5 as run is therefore a different method, it breaks constraint 2
+literally, and its N2 effect cannot yet be told apart from plain low momentum.**
+
+| N2-4.0 state | F4d: first event | F5: event | F5 E, last 500 | E, 500 rows before replay | carried/eps p99.9 / max | β applied median [p5] | β\* median | cos median |
+|---|---|---|---|---|---|---|---|---|
+| E14 s0 | 11,150 | none (to 19,999) | −109.0788 | −109.0227 | 2.49 / 8.7 | 0.519 [0.306] | 0.260 | 0.246 |
+| E14 s1 | 10,350 | none | −109.1590 | −109.0982 | 3.40 / 16.3 | 0.472 [0.271] | 0.236 | 0.242 |
+| E14 s2 | 12,810 | none | −109.0656 | −109.0061 | 2.16 / 4.8 | 0.537 [0.327] | 0.269 | 0.260 |
+| E15 s6 (from 60k) | 60,080 | none (to 69,999) | −109.1824 | −109.1787 | 2.56 / 13.4 | 0.478 [0.275] | 0.239 | 0.239 |
+| E15 s7 | 11,460 | none | −109.1500 | −109.0736 | 3.95 / 9.0 | 0.477 [0.271] | 0.239 | 0.242 |
+| E18 s2 (η 0.0015) | 16,360 | none | −109.0329 | −108.9812 | 2.47 / 31.2 | 0.549 [0.334] | 0.274 | 0.258 |
+
+| stable system (50k → 55k) | E, last 500 | E, 500 rows before replay | guard on | rows with momentum 0 | β applied median [p5] | cos median [p5] |
+|---|---|---|---|---|---|---|
+| carbon | −37.8449 | −37.8450 | 99.98% | 445 | 0.272 [0] | 0.084 [−0.021] |
+| H4 | −2.0342 | −2.0342 | 100% | 695 | 0.191 [0] | 0.093 [−0.049] |
+| N | −54.5889 | −54.5892 | 100% | 584 | 0.252 [0] | 0.078 [−0.028] |
+| O | −75.0667 | −75.0665 | 100% | 308 | 0.273 [0] | 0.099 [−0.007] |
+| N2-eq | −109.5303 | −109.5307 | 99.94% | 3 | 0.615 [0.374] | 0.275 [0.178] |
+| CO | −113.3181 | −113.3152 | 100% | 2 | 0.567 [0.339] | 0.257 [0.164] |
+
+- **Report:** [F5 β\* guard vs PRIME-SR, SPRING and SS-SPRING — all molecules](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-e/reports/F5-beta*-guard-vs-PRIME-SR,-SPRING-and-SS-SPRING-—-all-molecules--VmlldzoxODA4NTEzMQ==)
+  (`slurm/report_f5_guard.py`). It has the E14–E19 report's four sections, with one
+  subsection per molecule. The F5 runs ran offline: sync them with `--legacy`, scoped to
+  F5, then run `slurm/f5_backfill_wandb.py`. That stamps x_experiment=F5, x_system,
+  x_arm=f5_guard, x_seed and x_replay_of, which the report filters on.
+- **Survival is a clear effect.** 0/6 fail against 11/12 for the pooled baseline (F3b
+  no-cap + F4d). Fisher exact, one-sided, p ≈ 4e-4. E15 s6 is the sharpest case: F4d
+  failed 80 rows into the same 60k state, and F5 ran all 10k. E18 s2 counts less, since
+  it also survived both F3b arms. Carried/eps stays tame: healthy p99.9 2.2–4.0, as in
+  F4d, with isolated rows up to 31 (E18 s2). Across all six runs, a single row crosses K=20.
+- **No slow failure is visible either.** Every N2 arm ends below its pre-replay level,
+  and none goes below the −109.2021 reference (the F4d approach dipped 0.5–0.9 Ha below
+  it). The event detector misses slow failures (Step 0 side finding), so only the
+  energy tail rules this out, and the variance tail has not been read yet.
+- **The N2 energies have no fair baseline yet.** "Before the replay" is 10k steps
+  earlier, and every original had failed by the replay's end epoch. At 20k the arms
+  sit 43–169 mHa above the reference (E15 s6 at 70k: 20 mHa). The comparison needed is
+  the E15 survivors s4/s5 over the same epochs. `f2_replay_summary.py` now prints the
+  same-epoch energy and variance of the original and of `--reference` runs (2026-10-09).
+- **The stable systems show no harm over this window, but it is a weak test.** Tail
+  energies at 54.5–55k are within 0.4 mHa of the 49.5–50k level on 5/6 systems, and
+  CO is 2.9 mHa lower. Same-epoch original values not yet read. Late in training the
+  learning rate has decayed and the energy is flat, while momentum matters most early.
+  The norm constraint may also hide the change if it binds on most rows, since then
+  the step size is C whatever β is. `update_sq_norm_preclip` against C² would show this.
+- **Why it binds everywhere (a reading, not verified).** It binds iff carried/eps >
+  2 cos(ε̄, Aφ). Healthy carried/eps is 0.6–1.0, but cos is only 0.08–0.28, so 2 cos is
+  below carried/eps on almost every row. The pre-run expectation (cos > 0.5) was wrong.
+  cos is small because ε̄ on fresh walkers is mostly Monte Carlo noise. Write ε̄ = s + n.
+  Even a carried term that reproduces the systematic part s exactly has cos =
+  ‖s‖/‖ε̄‖. The single-batch test ‖ε̄ − βAφ‖ ≤ ‖ε̄‖ counts n as residual that the
+  momentum should remove, but averaging n out over steps is what momentum is for. So
+  2β\* tracks roughly twice the signal fraction of the target, whether or not the
+  momentum does harm.
+  - Consistent with this, the atoms and H4 (cos 0.08–0.10) get β ≈ 0.2 and 6–14% of
+    rows with zero momentum, and N2-4.0 has the same cos (0.24–0.26) as N2-eq and CO
+    (0.26–0.28). β\* does not single out the failing geometry in healthy rows.
+- **What F5 shows, then.** On these six states, momentum ≈ 0.5 is stable for 10k steps
+  where momentum ≈ 0.997 fails 0.08–6.4k steps in (F4d). This fits E16 (fixed SPRING: μ = 0.995
+  fails 2/3, 0.99 survives 3/3). It does not show that the guard's adaptivity matters.
+- **Next, options (the user's call):**
+  1. **Attribution control (cheapest, decisive for the story).** Replay the same six
+     states with the guard off and the momentum fixed, at ~0.5 (F5's applied median) and
+     at 0.99 (the old β-ceiling lever). Needs a small new key. As a control it adds no
+     method hyperparameter. If 0.5 survives as F5 does, the guard is just a momentum cut.
+     If 0.99 also survives, a mild cut is enough and costs less accuracy.
+  2. **Accept F5 as a new method.** Then it needs from-scratch 100k runs on all seven
+     systems against SS-SPRING and PRIME-SR, with divergence fractions, since momentum
+     ~0.2–0.6 changes the method everywhere. The 5k late windows do not establish
+     accuracy.
+  3. **A noise-corrected guard** that restores constraint 2. It would bind only when the
+     carried term raises the residual beyond what the noise in ε̄ explains, e.g. with a
+     split-batch estimate of ‖n‖. This needs design, and it must stay free of tunable
+     constants.
+- **Route chosen (2026-10-09): option 2, F6.** The user chose to adopt the F5 method
+  and benchmark it from scratch. The attribution control (option 1) is not run first.
+  So if F6 holds up, it is still open whether the guard's adaptivity matters or only
+  the lower momentum does.
+
+**F6 IMPLEMENTED (2026-10-09), NOT YET RUN: the F5 method from scratch at 100k, on
+every system.** `slurm/f6_guard_scratch_100k.sbatch`, array 0-33, one arm (`ssu_guard`).
+
+- **Method:** SS-SPRING with `beta_star_guard=True` and `gram_center_first=True`, as in
+  F5. The two are not separated. `diagnostics=True` is the exact code path F5 ran. It
+  also logs the applied momentum and gives forensics if an N2 seed fails. It costs one
+  extra jvp per step, so wall time is not comparable to the original cells.
+- **Everything else is identical to the original cells:** preset, seed, eta, schedule,
+  C = 1e-3, 100k epochs, checkpoints every 10k, eval phase. Only default-off keys were
+  added to `default_config.py` since Phase D (checked with git diff), and
+  `preset_configs/` is unchanged. So F6 seed s has the same initial parameters as the
+  original seed-s cells.
+
+| indices | system | seeds | eta | eval nchains / nburn / nepochs | pairs with |
+|---|---|---|---|---|---|
+| 0-7 | N2_4.0 | 0-7 | 0.002 | 1000 / 10000 / 20000 | E14 (s0-2) + E15 (s3-7) |
+| 8-10 | N2_eq | 0-2 | 0.002 | 1000 / 10000 / 20000 | D10 |
+| 11-13 | CO | 0-2 | 0.002 | 1000 / 10000 / 20000 | D10 |
+| 14-18 | carbon | 0-4 | 0.02 | 2000 / 5000 / 20000 | D7 |
+| 19-23 | H4 | 0-4 | 0.02 | 2000 / 5000 / 20000 | D7 |
+| 24-28 | N | 0-4 | 0.02 | 2000 / 5000 / 20000 | D9 |
+| 29-33 | O | 0-4 | 0.02 | 2000 / 5000 / 20000 | D9 |
+
+- **Cost:** about 450 GPU-h with a 36 h walltime. The molecules take ~0.65 s/step
+  (~18–20 h plus eval each); the atoms and H4 take ~7–8 h (D7).
+- **What would confirm it (stated before the run):**
+  - Stretched N2: 0–1 of 8 seeds diverge (the old SS-SPRING lost 6/8). Eval energies
+    are in the range of the old survivors (12.3 mHa) and of E14's SPRING (14.99) and
+    PRIME-SR (17.61).
+  - Stable systems: eval energies within the seed spread of the original SS-SPRING
+    cells. A systematic loss there is the price of the momentum cut. It is most likely
+    early in training, where momentum matters most.
+- **Harvest tooling:** F6 is registered in `parse_eval_energies.py` (method name
+  "SS-SPRING+guard", project vmcnet-phase-f) and in `divergence_check.py`. Their index
+  maps agree with the sbatch on all 34 cells (checked), and both were tested on
+  synthetic .out files.
+- **Commands:**
+  - Stability: `python slurm/divergence_check.py --experiment E14 E15 F6`.
+  - Eval energies: `python slurm/parse_eval_energies.py --experiment F6 D7 D9 D10 E14
+    E15`, then `--experiment F6 --backfill` after a scoped `wandb sync --legacy`.
 - **Open:** s0, s1 and s2 end at 18,931 / 18,571 / 15,764, and E15 s6 at 68,341.
   Probably probe NaN deaths (the safeguard and its sanitizer are off), but check
   the .out files.
@@ -1857,7 +1982,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. F4d one-step check done (step error 83% -> 11%) and F4d replay run 2026-10-08: 6/6 still fail; numerics fixed (bound ratio < 1 through every approach) but the probe diverges before every event while beta is frozen at ~0.997 (see Phase F, F4d RESULT). Step 0 done 2026-10-08 (r_ip alarm dead: it fires routinely on stable systems). Next action: `sbatch slurm/f5_beta_star_guard.sbatch` (beta* guard + F4d; 6 failing N2 states + 6 stable systems), readout `f2_replay_summary.py --carried --guard --pattern "f5_*"`. Superseded next action: beta-ceiling replay (F4d on, beta <= 0.99, needs a new key), then a controller stability channel or F3c with F4d on. Superseded next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. F4d one-step check done (step error 83% -> 11%) and F4d replay run 2026-10-08: 6/6 still fail; numerics fixed (bound ratio < 1 through every approach) but the probe diverges before every event while beta is frozen at ~0.997 (see Phase F, F4d RESULT). Step 0 done 2026-10-08 (r_ip alarm dead: it fires routinely on stable systems). F5 run 2026-10-08/09: the beta* guard survives 6/6 N2 replays (F4d 6/6 failed) but binds on ~100% of rows on every system, cutting momentum to ~0.2-0.6 (see Phase F, F5 RESULT). Route chosen 2026-10-09: adopt F5 as a method. Next action: `sbatch slurm/f6_guard_scratch_100k.sbatch` (34 runs, F5 method from scratch at 100k on all seven systems; Phase F, F6), then `divergence_check.py --experiment E14 E15 F6` and `parse_eval_energies.py --experiment F6 D7 D9 D10 E14 E15`. Superseded next action: read the same-epoch energies, then choose between the attribution control, adopting F5, or a noise-corrected guard. Superseded next action: `sbatch slurm/f5_beta_star_guard.sbatch`, readout `f2_replay_summary.py --carried --guard --pattern "f5_*"`. Superseded next action: beta-ceiling replay (F4d on, beta <= 0.99, needs a new key), then a controller stability channel or F3c with F4d on. Superseded next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue

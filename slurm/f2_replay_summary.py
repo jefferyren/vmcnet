@@ -29,6 +29,8 @@ Usage (Savio login node, after the array finishes):
     python slurm/f2_replay_summary.py --sustained --logroot ...   # F3c calibration
     python slurm/f2_replay_summary.py --rip --logroot ...         # r_ip alarm calib.
     python slurm/f2_replay_summary.py --guard --pattern "f5_*" --logroot ...  # F5
+    python slurm/f2_replay_summary.py --pattern "f5_N2_4.0_*" --logroot ... \
+        --reference "$PHASE_E/e15_n2_seedcheck/e15_N2_4.0_ssu_defaults_s[45]"
 """
 
 import argparse
@@ -133,6 +135,12 @@ def main():
         help="beta* guard (F5) readout: how often it binds, how far it lowers the "
         "momentum, and beta* / cos(eps, A phi) in healthy rows and before the event",
     )
+    ap.add_argument(
+        "--reference",
+        default=None,
+        help="logdir glob of non-replay runs (e.g. the E15 survivors) whose mean E and "
+        "variance over the replay's last 500 rows are printed next to it",
+    )
     args = ap.parse_args()
 
     for d in sorted(glob.glob(os.path.join(args.logroot, args.pattern))):
@@ -176,6 +184,29 @@ def main():
             f"  last epoch {last}; first catastrophe {ev}; mean E last 500 {tail:.4f} "
             f"(original, 500 rows before the replay: {before:.4f})"
         )
+        # same epochs in the original, and in any --reference runs (e.g. survivors of
+        # the same geometry): the replay's own start level is not a fair baseline
+        lo, hi = max(start, last - 500), last + 1
+        same = [("original", original, off)] + [
+            (os.path.basename(r), r, 0) for r in sorted(glob.glob(args.reference or ""))
+        ]
+        for label, r, sh in same:
+            re_, rv = load(r, "energy_noclip"), load(r, "variance_noclip")
+            if re_ is None or len(re_) < hi + sh:
+                print(f"    same rows {lo}-{hi - 1}, {label}: not reached")
+                continue
+            rev = first_event(re_, rv, 0) if rv is not None else None
+            failed = (
+                f" (its first catastrophe {rev})"
+                if rev is not None and rev < hi
+                else ""
+            )
+            print(
+                f"    same rows {lo}-{hi - 1}: mean E {tail:.4f} replay vs "
+                f"{np.nanmean(re_[lo + sh : hi + sh]):.4f} {label}{failed}; mean var "
+                f"{np.nanmean(v[lo:hi]):.4g} vs "
+                f"{np.nanmean(rv[lo + sh : hi + sh]) if rv is not None else np.nan:.4g}"
+            )
 
         scale = load(d, "diag_carried_scale", start)
         if scale is not None:

@@ -124,6 +124,9 @@ METHOD = {
     # separates them, so they are two arms rather than two methods in the code.
     "minsr": "MinSR",
     "minsr_m": "MinSR+M",
+    # Phase F, F6: SS-SPRING + beta* guard + centre-first Gram, a new method rather
+    # than an SS-SPRING arm, so it gets its own name in the arm means.
+    "ssu_guard": "SS-SPRING+guard",
 }
 MU_NOMINAL = {"spring_mu0.9": 0.9, "spring_mu0.95": 0.95, "spring_mu0.99": 0.99,
               "spring_mu0.995": 0.995, "spring_mu0.999": 0.999,
@@ -305,6 +308,29 @@ def _e19_cell(idx):
         x_experiment="E19", x_system="N2_4.0", x_arm=arm, x_seed=seed, x_eta=0.002)
 
 
+# Phase F, F6: one arm (ssu_guard) on every system, the index layout of
+# f6_guard_scratch_100k.sbatch. (system, first index, nseeds, eta), in index order.
+F6_BLOCKS = [("N2_4.0", 0, 8, 0.002), ("N2_eq", 8, 3, 0.002), ("CO", 11, 3, 0.002),
+             ("carbon", 14, 5, 0.02), ("H4", 19, 5, 0.02), ("N", 24, 5, 0.02),
+             ("O", 29, 5, 0.02)]
+
+
+def _f6_cell(idx):
+    """Array index -> cell, mirroring f6_guard_scratch_100k.sbatch exactly.
+
+    Seed s pairs with the original seed-s cell of the same system (E14/E15 on N2_4.0,
+    D10, D7, D9): same init, same eta, same eval phase. Parse them together, e.g.
+    `--experiment F6 D7 D9 D10 E14 E15`, and read F6 against them cell by cell.
+    """
+    for system, first, nseeds, eta in F6_BLOCKS:
+        if first <= idx < first + nseeds:
+            seed = idx - first
+            return f"f6_{system}_ssu_guard_s{seed}", dict(
+                x_experiment="F6", x_system=system, x_arm="ssu_guard", x_seed=seed,
+                x_eta=eta)
+    raise IndexError(f"F6 has no array index {idx}")
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -357,6 +383,9 @@ EXPERIMENTS = {
     "E19": dict(pattern="slurm-e19-n2-normcap-*_{idx}.out", ntasks=6,
                 cell=_e19_cell, nepochs=100000, group_by="system",
                 project="vmcnet-phase-e"),
+    "F6": dict(pattern="slurm-f6-guard-100k-*_{idx}.out", ntasks=34,
+               cell=_f6_cell, nepochs=100000, group_by="system",
+               project="vmcnet-phase-f"),
 }
 
 
@@ -504,7 +533,8 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "E16": "e16_n2_stretched_spring_mu0995",
            "E17": "e17_n2_stretched_eta_sweep",
            "E18": "e18_n2_stretched_eta0015",
-           "E19": "e19_n2_stretched_normcap"}
+           "E19": "e19_n2_stretched_normcap",
+           "F6": "f6_guard_scratch_100k"}
 
 
 def report(experiment, rows, duplicates):
@@ -600,7 +630,8 @@ def backfill(rows, entity, project):
                       # Derived from METHOD rather than a list of arm names: E19's
                       # SS-SPRING arms are not named ssu_defaults, and a hard-coded
                       # list silently wrote x_adaptive=False on them.
-                      x_adaptive=METHOD[row["x_arm"]] in ("PRIME-SR", "SS-SPRING"),
+                      x_adaptive=METHOD[row["x_arm"]]
+                      in ("PRIME-SR", "SS-SPRING", "SS-SPRING+guard"),
                       x_nepochs=EXPERIMENTS[row["x_experiment"]]["nepochs"])
         # Row-supplied mu wins: E7/D7's "spring_tuned" has a per-system mu that no
         # arm-keyed table can express.

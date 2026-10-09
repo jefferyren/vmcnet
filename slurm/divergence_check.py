@@ -40,6 +40,23 @@ EPOCH_RE = re.compile(
 )
 NAN_MARKER = "VMC terminated due to Nans! Aborting."
 
+# F6's index layout (f6_guard_scratch_100k.sbatch): (system, first index, nseeds).
+_F6_BLOCKS = [("N2_4.0", 0, 8), ("N2_eq", 8, 3), ("CO", 11, 3), ("carbon", 14, 5),
+              ("H4", 19, 5), ("N", 24, 5), ("O", 29, 5)]
+
+
+def _f6_block(i):
+    return next(b for b in _F6_BLOCKS if b[1] <= i < b[1] + b[2])
+
+
+def _f6_system(i):
+    return _f6_block(i)[0]
+
+
+def _f6_seed(i):
+    return i - _f6_block(i)[1]
+
+
 # Job-name globs, matching the sbatch --job-name of each experiment. Keep these
 # prefix-disjoint: a pattern that also matches another experiment's files merges the
 # two silently, with no error.
@@ -68,6 +85,12 @@ EXPERIMENTS = {
     # C=1e-3 on these same three seeds IS the control.
     "E19": dict(pattern="slurm-e19-n2-normcap-*_{idx}.out", ntasks=6, nepochs=100000,
                 cell=lambda i: (("ssu_cap0.01", "ssu_nocap")[i // 3], i % 3)),
+    # F6: the beta* guard as a method from scratch on every system. Only indices 0-7
+    # are stretched N2 (seeds 0-7, pairing with E14 s0-2 + E15 s3-7); 8-33 are the
+    # stable systems, checked here too because the guard changes the method there.
+    # Parse with `--experiment E14 E15 F6`. The arm label carries the system.
+    "F6": dict(pattern="slurm-f6-guard-100k-*_{idx}.out", ntasks=34, nepochs=100000,
+               cell=lambda i: (f"ssu_guard_{_f6_system(i)}", _f6_seed(i))),
 }
 
 
