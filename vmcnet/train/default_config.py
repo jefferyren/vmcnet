@@ -373,6 +373,11 @@ def get_default_vmc_config() -> Dict:
                 # ||A(beta phi)|| <= carried_cap * ||eps|| on each step's walkers.
                 # 0 = off. Calibrated value from the F2 replays: 10.
                 "carried_cap": 0.0,
+                # beta_star_guard (F4a): main momentum = min(beta, 2 beta*), where
+                # beta* = <eps, A phi>/||A phi||^2 is the momentum that best fits this
+                # step's target on its walkers; past 2 beta* the carried term raises
+                # the residual left for the solve. No tunable constant. Off = original.
+                "beta_star_guard": False,
                 # F4d: centre the Gram rows BEFORE the contraction (float32
                 # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
                 "gram_center_first": False,

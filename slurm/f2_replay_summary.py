@@ -28,6 +28,7 @@ Usage (Savio login node, after the array finishes):
         --logroot /global/scratch/users/$USER/vmcnet_logs/phase_f/f3b_carried_cap
     python slurm/f2_replay_summary.py --sustained --logroot ...   # F3c calibration
     python slurm/f2_replay_summary.py --rip --logroot ...         # r_ip alarm calib.
+    python slurm/f2_replay_summary.py --guard --pattern "f5_*" --logroot ...  # F5
 """
 
 import argparse
@@ -57,6 +58,8 @@ ONSET_KEYS = [
     "diag_bound_ratio",
     "diag_equation_residual",
     "diag_carried_over_eps",
+    "diag_momentum_cos",
+    "diag_beta_applied",
     "diag_gram_lam_max",
     "diag_gram_min_eig_preclip",
     "diag_walker_rownorm_max_over_median",
@@ -124,6 +127,12 @@ def main():
         "distribution in healthy rows, and for each (T, W, M) rule (r_ip > T on >= M "
         "of the last W rows) its healthy firings and lead",
     )
+    ap.add_argument(
+        "--guard",
+        action="store_true",
+        help="beta* guard (F5) readout: how often it binds, how far it lowers the "
+        "momentum, and beta* / cos(eps, A phi) in healthy rows and before the event",
+    )
     args = ap.parse_args()
 
     for d in sorted(glob.glob(os.path.join(args.logroot, args.pattern))):
@@ -173,7 +182,8 @@ def main():
             capped = np.nonzero(scale[start:] < 1.0)[0]
             first_cap = int(start + capped[0]) if len(capped) else None
             print(
-                f"  carried cap: active on {len(capped)} of {last + 1 - start} rows "
+                f"  carried scale (cap or guard) < 1 on {len(capped)} of "
+                f"{last + 1 - start} rows "
                 f"({100.0 * len(capped) / max(1, last + 1 - start):.2f}%); first at "
                 f"{first_cap}; min scale {np.nanmin(scale[start:]):.3g}"
             )
@@ -215,6 +225,8 @@ def main():
             sustained_table(d, start, ev, last)
         if args.rip:
             rip_table(load(d, "probe_r_ip"), start, ev, last)
+        if args.guard:
+            guard_table(d, start, ev, last)
 
 
 PRECURSOR_KEYS = [
@@ -371,6 +383,44 @@ def rip_table(r, start, ev, last):
             f"    r_ip > {t:<3} on >= {m:<2} of {w:<2} rows  healthy firings: "
             f"{n_healthy:<4} first firing: {first}  lead over catastrophe: {lead}"
         )
+
+
+def guard_table(d, start, ev, last):
+    """beta* guard readout. diag_carried_scale < 1 marks a row where the guard (or a
+    cap) lowered the momentum to diag_beta_applied = min(beta, 2 beta*). Healthy span
+    as in carried_table; on a run that fails, the 50 rows before the catastrophe are
+    summarised separately."""
+    scale = load(d, "diag_carried_scale", start)
+    bstar = load(d, "diag_beta_star", start)
+    cos = load(d, "diag_momentum_cos", start)
+    applied = load(d, "diag_beta_applied", start)
+    if scale is None or bstar is None:
+        return
+    hi = (ev - 300) if ev is not None else last + 1
+
+    def describe(lo, hi_, label):
+        sc, bs, cs, ap = (x[lo:hi_] for x in (scale, bstar, cos, applied))
+        ok = np.isfinite(sc)
+        if not ok.any():
+            return
+        sc, bs, cs, ap = sc[ok], bs[ok], cs[ok], ap[ok]
+        on = sc < 1.0
+        on_txt = f"median scale when on {np.median(sc[on]):.3g}" if on.any() else ""
+        dropped = int((sc == 0).sum())
+        print(
+            f"  guard, {label} rows {lo}-{hi_ - 1}: on {on.sum()} of {len(sc)} "
+            f"({100 * on.mean():.1f}%), momentum dropped (scale 0) {dropped}; {on_txt}"
+        )
+        print(
+            f"    beta* median {np.median(bs):.4g} [p1 {np.percentile(bs, 1):.3g}, "
+            f"p99 {np.percentile(bs, 99):.3g}]; cos(eps, A phi) median "
+            f"{np.median(cs):.3g} [p5 {np.percentile(cs, 5):.3g}]; beta applied "
+            f"median {np.median(ap):.4g} [p5 {np.percentile(ap, 5):.3g}]"
+        )
+
+    describe(start, hi, "healthy")
+    if ev is not None:
+        describe(max(start, ev - 50), ev, "pre-event")
 
 
 def precursor_table(d, start, end):

@@ -808,4 +808,124 @@ def test_default_config_carries_phase_f_keys():
     assert block["diagnostics"] is False
     assert block["safeguard"] is False
     assert block["carried_cap"] == 0.0
+    assert block["beta_star_guard"] is False
     assert block["safeguard_carried_window"] == 0
+
+
+# ---- Phase F step F4a: the beta* guard ----
+
+
+def _guard_steps(**kwargs):
+    plain = get_same_sampled_spring_unified_step(
+        _log_psi_apply, lambda t: 0.05, **kwargs
+    )
+    guarded = get_same_sampled_spring_unified_step(
+        _log_psi_apply,
+        lambda t: 0.05,
+        beta_star_guard=True,
+        return_diagnostics=True,
+        **kwargs,
+    )
+    return plain, guarded
+
+
+def _carried(params, positions, state):
+    kernel_fn = nt.empirical_kernel_fn(_log_psi_apply, vmap_axes=0, trace_axes=())
+    apply_A, _, _, _ = _build_operators(kernel_fn, _log_psi_apply, params, positions)
+    return apply_A(jax.tree_map(lambda x: state.beta * x, state.phi))
+
+
+def _assert_same_main_step(a, b, rtol=1e-5, atol=1e-6):
+    (u_a, s_a), (u_b, s_b) = a, b
+    for x, y in zip(
+        jax.tree_util.tree_leaves((u_a, s_a.phi)),
+        jax.tree_util.tree_leaves((u_b, s_b.phi)),
+    ):
+        np.testing.assert_allclose(x, y, rtol=rtol, atol=atol)
+
+
+def test_beta_star_guard_inactive_when_momentum_fits_the_new_walkers():
+    """If the carried term predicts the target exactly (beta* = beta), no change."""
+    params, positions, state, _, kwargs = _cap_setup()
+    centered = _carried(params, positions, state) * jnp.sqrt(positions.shape[0])
+    plain, guarded = _guard_steps(**kwargs)
+    u, s, diag = guarded(centered, params, positions, state)
+    np.testing.assert_allclose(float(diag["diag_beta_star"]), 0.99, rtol=1e-4)
+    np.testing.assert_allclose(float(diag["diag_momentum_cos"]), 1.0, rtol=1e-4)
+    assert float(diag["diag_carried_scale"]) == 1.0
+    _assert_same_main_step((u, s), plain(centered, params, positions, state)[:2])
+
+
+def test_beta_star_guard_equals_a_step_with_momentum_two_beta_star():
+    """Binding guard == the plain step at momentum 2 beta*, the no-harm boundary."""
+    params, positions, state, centered, kwargs = _cap_setup()
+    plain, guarded = _guard_steps(**kwargs)
+    u, s, diag = guarded(centered, params, positions, state)
+
+    c = _carried(params, positions, state)
+    eps = centered / jnp.sqrt(positions.shape[0])
+    beta_star = 0.99 * float(jnp.dot(eps, c) / jnp.dot(c, c))
+    np.testing.assert_allclose(float(diag["diag_beta_star"]), beta_star, rtol=1e-4)
+    expected = min(0.99, max(0.0, 2.0 * beta_star))
+    assert expected < 0.99  # small target vs a large carried term: the guard binds
+    np.testing.assert_allclose(float(diag["diag_beta_applied"]), expected, atol=1e-6)
+    # at 2 beta* the carried term leaves the residual exactly as large as eps
+    np.testing.assert_allclose(
+        float(jnp.linalg.norm(eps - (expected / 0.99) * c)),
+        float(jnp.linalg.norm(eps)),
+        rtol=1e-4,
+    )
+    ref = plain(centered, params, positions, state._replace(beta=jnp.array(expected)))
+    _assert_same_main_step((u, s), ref[:2])
+
+
+def test_beta_star_guard_drops_momentum_that_points_the_wrong_way():
+    """A carried term anti-aligned with the target (beta* < 0) is dropped entirely."""
+    params, positions, state, _, kwargs = _cap_setup()
+    centered = -_carried(params, positions, state) * jnp.sqrt(positions.shape[0])
+    plain, guarded = _guard_steps(**kwargs)
+    u, s, diag = guarded(centered, params, positions, state)
+    assert float(diag["diag_beta_star"]) < 0
+    assert float(diag["diag_beta_applied"]) == 0.0
+    ref = plain(centered, params, positions, state._replace(beta=jnp.array(0.0)))
+    _assert_same_main_step((u, s), ref[:2])
+
+
+def test_beta_star_guard_with_zero_momentum_is_a_no_op():
+    """At phi = 0 (e.g. the first step) there is nothing to guard."""
+    params, positions, _, centered, kwargs = _cap_setup()
+    state = _make_state(params, p=4, beta=0.99)
+    plain, guarded = _guard_steps(**kwargs)
+    u, s, diag = guarded(centered, params, positions, state)
+    assert float(diag["diag_carried_scale"]) == 1.0
+    _assert_same_main_step((u, s), plain(centered, params, positions, state)[:2])
+
+
+def test_beta_star_guard_and_carried_cap_take_the_smaller_factor():
+    """With both on, the momentum is scaled by the smaller of the two factors."""
+    params, positions, state, centered, kwargs = _cap_setup()
+    both = get_same_sampled_spring_unified_step(
+        _log_psi_apply,
+        lambda t: 0.05,
+        beta_star_guard=True,
+        carried_cap=1e30,
+        return_diagnostics=True,
+        **kwargs,
+    )
+    _, guarded = _guard_steps(**kwargs)
+    d_both = both(centered, params, positions, state)[2]
+    d_guard = guarded(centered, params, positions, state)[2]
+    np.testing.assert_allclose(
+        float(d_both["diag_carried_scale"]), float(d_guard["diag_carried_scale"])
+    )
+
+
+def test_initialize_with_beta_star_guard_logs_the_applied_momentum():
+    """The config key reaches the step: diag_beta_applied and diag_carried_scale log."""
+    update_param_fn, opt_state, key, params, positions = _init_update_fn(
+        _phase_f_config(diagnostics=True, beta_star_guard=True)
+    )
+    _, _, new_state, metrics, _ = update_param_fn(params, positions, opt_state, key)
+    assert isinstance(new_state, SameSampledSPRINGUnifiedState)
+    for k in ("diag_beta_star", "diag_beta_applied", "diag_carried_scale"):
+        assert k in metrics and bool(jnp.isfinite(metrics[k])), k

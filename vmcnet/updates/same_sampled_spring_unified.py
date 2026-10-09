@@ -271,6 +271,7 @@ def get_same_sampled_spring_unified_step(
     adaptive_probe: bool,
     return_diagnostics: bool = False,
     carried_cap: float = 0.0,
+    beta_star_guard: bool = False,
     sanitize_probe: bool = False,
     gram_center_first: bool = False,
 ) -> Callable[
@@ -294,16 +295,31 @@ def get_same_sampled_spring_unified_step(
       the identity A phi_k = eps - damping (T + damping)^-1 rhs (one extra jvp).
     - carried_over_eps: ||A (beta phi_{k-1})|| / ||eps||, the size of the carried
       momentum on this step's (fresh) walkers.
+    - beta_star: the momentum that best fits this step's target on these walkers,
+      argmin_b ||eps - b A phi_{k-1}|| = <eps, A phi> / ||A phi||^2; momentum_cos: the
+      cosine between eps and A phi_{k-1}; beta_applied: the momentum the main solve
+      used (beta, unless carried_cap or beta_star_guard lowered it). The first two are
+      computed before any cap or guard.
     - gram_lam_max, gram_min_eig_preclip, gram_trace, gram_n_eig_below_damping.
     - phi_norm, eps_norm, and the two kernel stats from _build_operators_with_stats.
-    - carried_scale (only with carried_cap > 0): the factor applied to the carried
-      momentum this step (1 = cap inactive). carried_over_eps is reported BEFORE it.
+    - carried_scale (only with carried_cap > 0 or beta_star_guard): the factor applied
+      to the carried momentum this step (1 = inactive). carried_over_eps is reported
+      BEFORE it.
 
     With `carried_cap = K > 0` (Phase F step F3b), whenever the carried momentum seen
     on this step's walkers exceeds K times the target, ||A(beta phi)|| > K ||eps||, the
     momentum buffer entering the step is shrunk so that ||A(beta phi)|| = K ||eps||.
     Because A is linear this costs nothing extra; it is equivalent to using momentum
     beta * scale for this one step. K = 0 disables it (the default, unchanged path).
+
+    With `beta_star_guard` (Phase F step F4a), the main solve uses momentum
+    min(beta, 2 beta*) (0 if beta* <= 0), with beta* as in the diagnostics above. That
+    is the largest momentum for which the carried term does not increase the residual
+    left for the solve on this step's walkers, ||eps - beta A phi|| <= ||eps||: past
+    it, the old direction fits the new walkers worse than starting from zero. It has no
+    tunable constant. Like the cap it costs one dot product, it scales the carried
+    term and the momentum buffer by the same factor, and it leaves the probe and the
+    beta controller untouched. With both on, the smaller factor wins.
 
     Args:
         log_psi_apply: maps (params, positions) -> log|psi|, shape (nchains,).
@@ -317,6 +333,7 @@ def get_same_sampled_spring_unified_step(
         adaptive_probe: if True, the probe step uses eta_main instead of probe_lr.
         return_diagnostics: if True, also return the diag dict described above.
         carried_cap: K for the carried-momentum cap; 0 disables it.
+        beta_star_guard: if True, cap the main momentum at 2 beta* (see above).
         sanitize_probe: if True, a non-finite probe window ratio cannot reach r_hat and
             beta (see _adaptive_beta_update). On with the safeguard.
         gram_center_first: centre the Gram rows before the contraction (see
@@ -357,12 +374,34 @@ def get_same_sampled_spring_unified_step(
         epsilon_bar = centered_local_energies / sqrt_n
         carried = apply_A(multiply_tree_by_scalar(state.phi, beta))
         carried_raw_norm = jnp.linalg.norm(carried)
+        # least-squares multiplier s* of the carried term on this step's walkers:
+        # argmin_s ||eps - s A(beta phi)||, so beta* = beta s* (see beta_star_guard)
+        eps_dot_carried = jnp.dot(epsilon_bar, carried)
+        carried_fit = eps_dot_carried / (carried_raw_norm**2 + 1e-30)
+        scales = []
         if carried_cap > 0:
-            # F3b: shrink the carried momentum to at most K x the target on fresh walkers
-            carried_scale = jnp.minimum(
-                1.0,
-                carried_cap * jnp.linalg.norm(epsilon_bar) / (carried_raw_norm + 1e-30),
+            # F3b: shrink the carried momentum to <= K x the target on fresh walkers
+            scales.append(
+                jnp.minimum(
+                    1.0,
+                    carried_cap
+                    * jnp.linalg.norm(epsilon_bar)
+                    / (carried_raw_norm + 1e-30),
+                )
             )
+        if beta_star_guard:
+            # F4a: keep momentum only up to the beta at which it stops lowering the
+            # residual left for the solve, ||eps - beta A phi|| <= ||eps||, i.e.
+            # beta <= 2 beta*. No carried term (phi = 0) -> nothing to guard.
+            scales.append(
+                jnp.where(
+                    carried_raw_norm > 0, jnp.clip(2.0 * carried_fit, 0.0, 1.0), 1.0
+                )
+            )
+        if scales:
+            carried_scale = scales[0]
+            for sc in scales[1:]:
+                carried_scale = jnp.minimum(carried_scale, sc)
             carried = carried * carried_scale
             beta_main = beta * carried_scale
         else:
@@ -446,6 +485,10 @@ def get_same_sampled_spring_unified_step(
             "diag_bound_ratio": phi_new_norm / bound,
             "diag_equation_residual": jnp.linalg.norm(residual) / eps_norm,
             "diag_carried_over_eps": carried_raw_norm / eps_norm,
+            "diag_beta_star": beta * carried_fit,
+            "diag_momentum_cos": eps_dot_carried
+            / (eps_norm * carried_raw_norm + 1e-30),
+            "diag_beta_applied": beta_main,
             "diag_phi_norm": phi_new_norm,
             "diag_eps_norm": eps_norm,
             "diag_gram_lam_max": jnp.max(tvals),
@@ -456,7 +499,7 @@ def get_same_sampled_spring_unified_step(
             ),
             **kernel_stats,
         }
-        if carried_cap > 0:
+        if scales:
             diag["diag_carried_scale"] = carried_scale
         return updates, new_state, diag
 
@@ -824,6 +867,7 @@ def initialize_same_sampled_spring_unified(
     # still load; both default to off, which leaves the update path unchanged.
     diagnostics = bool(optimizer_config.get("diagnostics", False))
     carried_cap = float(optimizer_config.get("carried_cap", 0.0))
+    beta_star_guard = bool(optimizer_config.get("beta_star_guard", False))
     safeguard = bool(optimizer_config.get("safeguard", False))
     sg_cfg = SafeguardConfig(
         step_ratio=float(optimizer_config.get("safeguard_step_ratio", 3.0)),
@@ -851,7 +895,10 @@ def initialize_same_sampled_spring_unified(
         bool(optimizer_config.adaptive_probe),
         return_diagnostics=diagnostics or safeguard,
         carried_cap=carried_cap,
-        sanitize_probe=safeguard,
+        beta_star_guard=beta_star_guard,
+        # the guard lowers the main momentum but not the probe's, so the probe can
+        # still overflow as in F3b's capped arms; keep that from turning beta into NaN
+        sanitize_probe=safeguard or beta_star_guard,
         gram_center_first=bool(optimizer_config.get("gram_center_first", False)),
     )
 

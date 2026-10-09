@@ -1268,6 +1268,56 @@ cannot act on.**
     never fails are false alarms. It also prints the median β per run.
   - Caveat: the originals predate F4d.
   - Both were tested on synthetic logdirs only.
+- **Step 0 RESULT (read 2026-10-08). An r_ip alarm is dead; the probe expands routinely
+  on stable systems.**
+  - **F4d replays (N2):** r_ip > 2 fires 12–26 rows before the event (E18 s2: 138), with
+    no healthy firings. Healthy r_ip p99.9 is 1.16–1.68.
+  - **Original runs on the stable systems:** the same rule fires all the time.
+
+    | system | r_ip > 2 firings | r_ip > 5 firings | healthy rows |
+    |---|---|---|---|
+    | H4 | 1,843 | 158 | 495k |
+    | N / O | 222 / 214 | 14 / 18 | 740k each |
+    | carbon (η 0.02) | 106 | 9 | 495k |
+    | CO / N2-eq | 18 / 16 | 0 / 0 | 444k each |
+
+    A probe whose residual grows over a 60-step window is normal and harmless there. Any
+    r_ip threshold would therefore change the method on stable systems, which breaks
+    constraint 2. F4b on r_ip is dropped, and the signal has to come from the main solve.
+  - **Median β by system** (after 10k steps): H4 0.991–0.992; O, N and carbon
+    0.993–0.995; CO and N2-eq 0.997; N2-4.0 0.995–0.997 before events; E17 0.9975–0.998.
+  - **Side finding:** the original E18 s2 has median β 0.9992 after 10k and r_ip p99.9
+    304, but the event detector (E +1 Ha and variance ×20) never flags it. The detector
+    misses slow failures.
+  - E10's `_s?_1` directories are duplicates of the `_s?` runs.
+- **F5 IMPLEMENTED (2026-10-08), NOT YET RUN: the β\* guard (`beta_star_guard`).**
+  - **Rule:** the main solve uses momentum min(β, 2β\*), and 0 if β\* ≤ 0. Here β\* =
+    ⟨ε̄, Aφ⟩/‖Aφ‖² is the momentum that best fits this step's target on its walkers.
+  - **Why 2β\*:** it is exactly the largest β with ‖ε̄ − βAφ‖ ≤ ‖ε̄‖. Past it, the
+    carried term raises the residual the solve must fit, so the old direction does harm
+    on the new walkers. This is the analogue of O'Donoghue–Candès adaptive restart.
+  - **Properties:** no tunable constant, one dot product per step. The probe and the β
+    controller are untouched. The guard switches on the existing probe sanitizer, since
+    F3b's capped arms died through probe overflow.
+  - **Diagnostics** (with `diagnostics=True`, whether or not the guard is on):
+    `diag_beta_star`, `diag_momentum_cos`, `diag_beta_applied`.
+  - **Tests:** 6 new in `test_same_sampled_spring_unified.py`, covering an inactive
+    guard on a perfect fit, equality with a plain step at 2β\*, zeroing on anti-aligned
+    momentum, a no-op at φ = 0, composition with the cap, and the config wiring. All 77
+    update tests pass; mypy is clean.
+  - **Run:** `slurm/f5_beta_star_guard.sbatch`, array 0-11, about 16 GPU-h. The guard
+    and F4d are on in every run.
+    - Runs 0-5: the six failing N2 states, 10k steps each. The baseline is F4d at 6/6
+      failed.
+    - Runs 6-11: carbon, H4, N, O, N2-eq and CO, each from its seed-0 50k checkpoint
+      for 5k steps. These measure how often the guard binds where SS-SPRING is stable.
+  - **Readout:** `f2_replay_summary.py --carried --guard --pattern "f5_*" --logroot
+    .../phase_f/f5_beta_star_guard`.
+  - **Unknown before the run:** how often the guard binds in healthy rows. It binds
+    exactly when carried/eps > 2·cos(ε̄, Aφ). Healthy F4d rows have carried/eps ≈ 1, so
+    it should bind rarely if the momentum stays aligned with the target (cos > 0.5).
+    In the F4d approach, carried/eps reaches 15–300, so it should bind hard there. Both
+    are unverified; this run measures them.
 - **Open:** s0, s1 and s2 end at 18,931 / 18,571 / 15,764, and E15 s6 at 68,341.
   Probably probe NaN deaths (the safeguard and its sanitizer are off), but check
   the .out files.
@@ -1807,7 +1857,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. F4d one-step check done (step error 83% -> 11%) and F4d replay run 2026-10-08: 6/6 still fail; numerics fixed (bound ratio < 1 through every approach) but the probe diverges before every event while beta is frozen at ~0.997 (see Phase F, F4d RESULT). Next action: beta-ceiling replay (F4d on, beta <= 0.99, needs a new key), then a controller stability channel or F3c with F4d on. Superseded next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. F4d one-step check done (step error 83% -> 11%) and F4d replay run 2026-10-08: 6/6 still fail; numerics fixed (bound ratio < 1 through every approach) but the probe diverges before every event while beta is frozen at ~0.997 (see Phase F, F4d RESULT). Step 0 done 2026-10-08 (r_ip alarm dead: it fires routinely on stable systems). Next action: `sbatch slurm/f5_beta_star_guard.sbatch` (beta* guard + F4d; 6 failing N2 states + 6 stable systems), readout `f2_replay_summary.py --carried --guard --pattern "f5_*"`. Superseded next action: beta-ceiling replay (F4d on, beta <= 0.99, needs a new key), then a controller stability channel or F3c with F4d on. Superseded next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue
