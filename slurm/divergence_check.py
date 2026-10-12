@@ -138,8 +138,16 @@ def run(experiment, repo, window):
     rows = []
     for idx in range(spec["ntasks"]):
         paths = glob.glob(os.path.join(repo, spec["pattern"].format(idx=idx)))
-        parsed = [(p, parse(p, window)) for p in paths]
-        parsed = [(p, s) for p, s in parsed if s]
+        parsed = []
+        for p in paths:
+            # an unreadable file (EIO on Savio scratch, 2026-10-12) is named, not fatal
+            try:
+                s = parse(p, window)
+            except OSError as err:
+                print(f"  !! {experiment} idx {idx}: cannot read {p}: {err}")
+                continue
+            if s:
+                parsed.append((p, s))
         if not parsed:
             rows.append((idx, None, None))
             continue

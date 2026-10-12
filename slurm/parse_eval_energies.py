@@ -466,7 +466,19 @@ def collect(experiment, repo):
     for idx in range(spec["ntasks"]):
         name, meta = spec["cell"](idx)
         paths = sorted(glob(os.path.join(repo, spec["pattern"].format(idx=idx))))
-        parsed = [(p, s) for p in paths for s in [parse_out_file(p)] if s]
+        # A file the filesystem cannot read (EIO on Savio scratch, 2026-10-12) is
+        # skipped and named, not fatal: one bad file must not hide every other cell.
+        parsed, bad = [], []
+        for p in paths:
+            try:
+                s = parse_out_file(p)
+            except OSError as err:
+                bad.append(p)
+                print(f"  !! {experiment} idx {idx}: cannot read {p}: {err}")
+                continue
+            if s:
+                parsed.append((p, s))
+        paths = [p for p in paths if p not in bad]
         with_eval = [(p, s) for p, s in parsed if "eval_energy" in s]
         if len(with_eval) > 1:
             duplicates.append((name, [os.path.basename(p) for p, _ in with_eval]))
@@ -497,7 +509,9 @@ def collect(experiment, repo):
             rows.append(dict(name=name, idx=idx, status=status, **meta, **stats))
             continue
 
-        if not paths:
+        if not paths and bad:
+            why = "UNREADABLE"  # do not resubmit: the run may be fine, the file is not
+        elif not paths:
             why = "NO_OUT_FILE"
         elif any(NO_GPU in open(p, errors="replace").read(4000) for p in paths):
             why = "CUDA_NO_DEVICE"
