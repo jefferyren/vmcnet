@@ -1443,6 +1443,61 @@ every system.** `slurm/f6_guard_scratch_100k.sbatch`, array 0-33, one arm (`ssu_
   - Stability: `python slurm/divergence_check.py --experiment E14 E15 F6`.
   - Eval energies: `python slurm/parse_eval_energies.py --experiment F6 D7 D9 D10 E14
     E15`, then `--experiment F6 --backfill` after a scoped `wandb sync --legacy`.
+
+**F6 RESULT (read 2026-10-12). The F5 method is REJECTED. It never diverges (0/34, and
+0/8 on stretched N2 against 6/8 for the old SS-SPRING), but it is far less accurate on
+every system, so it is worse than every existing arm.**
+
+| system | F6 eval (mHa above ref) | old SS-SPRING | PRIME-SR | SPRING μ=0.99 | F6 − SS-SPRING |
+|---|---|---|---|---|---|
+| carbon | 1.131 ± 0.031 | 0.142 ± 0.013 | 0.183 | 0.138 | +0.99 (8.0×) |
+| N | 1.255 ± 0.061 | 0.157 ± 0.014 | 0.217 | 0.170 | +1.10 (8.0×) |
+| O | 3.133 ± 0.201 | 0.603 ± 0.045 | 0.577 | 0.453 | +2.53 (5.2×) |
+| H4 (raw Ha) | −2.03327 ± 0.00008 | −2.03421 | −2.03410 | −2.03420 | +0.94 mHa |
+| N2-eq | 34.65 ± 1.96 | 10.58 ± 0.09 | 13.27 | 11.12 | +24.1 (3.3×) |
+| CO | 36.06 ± 1.38 | 8.33 ± 0.21 | 11.22 | 8.84 | +27.7 (4.3×) |
+| N2-4.0 | 291.5 ± 113.3 (worst 953.8, n=8) | 12.27 (n=2 survivors of 8) | 17.61 | 14.99 | — |
+
+- **Every system loses, by many standard errors.** F6 is behind every arm, including
+  SPRING at μ = 0.9 on N2-eq (17.9) and CO (16.3). On H4 it trails even the mistuned
+  μ = 0.8 arm (−2.03393). F4d is on too, and the two flags are not separated. But
+  centre-first is exact in exact arithmetic and more accurate in float32, so it is
+  unlikely to cost accuracy. The guard's momentum cut (applied β ~0.2–0.6) is the
+  obvious cause. It fits the old μ sweeps, where lower μ is worse on the molecules.
+- **The molecules get worse late in training.** `divergence_check.py` best vs final
+  100-epoch block (mHa above ref):
+  - N2-eq: best 11–15, final 29–34.
+  - CO: best 14–16, final 26–38.
+  - N2-4.0: best 20–84, final 30–209.
+
+  The best blocks are close to the old arms; the final ones match the eval. So the
+  energy rises over the run without ever tripping the NaN or event detector: a slow
+  failure, like the F3b capped arms.
+- **On the atoms the training energy dips well below the exact energy.** The best
+  block is 1.7–4.8 mHa below on carbon, 2.3–4.9 on N, and 3.2–8.3 on O. The final
+  block is back above it, matching the eval. Best-of-1000-blocks selection explains
+  well under 1 mHa of that. So at some point the sampled energy is biased low, which
+  is the same signature as F4d's 0.5–0.9 Ha dip before the N2 events. A reading,
+  unverified: with little momentum, each step fits the noise of its own walker batch,
+  and the walkers then report a low energy that the wavefunction does not have.
+- **Stretched N2: eval is worse than the end of training on some seeds.** The eval
+  mean is 291 mHa (worst 954), against a final training block of 30–209. Per-seed
+  eval, eval variance and training tail are not read yet.
+- **What this settles.**
+  - A guard that binds on every row is a different, worse optimizer. Cutting momentum
+    to ~0.5 buys stability at 3–8× the error on the stable systems.
+  - The single-batch β\* test is the wrong yardstick (F5 RESULT, "why it binds
+    everywhere"), and F6 shows the cost.
+  - Stretched N2 still has no stable, accurate SS-SPRING variant.
+- **Still open, if Phase F continues:**
+  - A guard that binds only in the pathological regime (F5 option 3: noise-corrected).
+  - F3c rewind with F4d on (rewind only when carried/eps stays high; under F4d,
+    healthy rows sit at max ≤ 4.5).
+  - The fixed-momentum control (F5 option 1). It says how much momentum stretched N2
+    tolerates, even though a fixed β_max is not acceptable as a method.
+- `parse_eval_energies.py` and `divergence_check.py` now skip an unreadable .out file
+  and name it instead of crashing. ln000's scratch mount failed on 2026-10-12 with
+  ESHUTDOWN / EIO; ln002 was fine.
 - **Open:** s0, s1 and s2 end at 18,931 / 18,571 / 15,764, and E15 s6 at 68,341.
   Probably probe NaN deaths (the safeguard and its sanitizer are off), but check
   the .out files.
@@ -1982,7 +2037,7 @@ than measured — they are just as expensive to rediscover.
    large on this geometry and the norm constraint postpones divergence while it binds.
    Both obvious fixes are closed: a lower eta is too inaccurate, a looser cap diverges
    sooner. **The way forward is §5 Phase F (written 2026-10-01, nothing run):**
-   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. F4d one-step check done (step error 83% -> 11%) and F4d replay run 2026-10-08: 6/6 still fail; numerics fixed (bound ratio < 1 through every approach) but the probe diverges before every event while beta is frozen at ~0.997 (see Phase F, F4d RESULT). Step 0 done 2026-10-08 (r_ip alarm dead: it fires routinely on stable systems). F5 run 2026-10-08/09: the beta* guard survives 6/6 N2 replays (F4d 6/6 failed) but binds on ~100% of rows on every system, cutting momentum to ~0.2-0.6 (see Phase F, F5 RESULT). Route chosen 2026-10-09: adopt F5 as a method. Next action: `sbatch slurm/f6_guard_scratch_100k.sbatch` (34 runs, F5 method from scratch at 100k on all seven systems; Phase F, F6), then `divergence_check.py --experiment E14 E15 F6` and `parse_eval_energies.py --experiment F6 D7 D9 D10 E14 E15`. Superseded next action: read the same-epoch energies, then choose between the attribution control, adopting F5, or a noise-corrected guard. Superseded next action: `sbatch slurm/f5_beta_star_guard.sbatch`, readout `f2_replay_summary.py --carried --guard --pattern "f5_*"`. Superseded next action: beta-ceiling replay (F4d on, beta <= 0.99, needs a new key), then a controller stability channel or F3c with F4d on. Superseded next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
+   - **F1 done 2026-10-01: the bound check failed its sanity test (see Phase F, F1 RESULT). F1b done too (bound = clean detector at ratio>3, not a precursor). F2/F3 are implemented (flags `diagnostics`, `safeguard`, default off). F2/F3 replays ran (safeguard-on survived both, see F2/F3 RESULT). Precursors read: carried momentum ||A(beta phi)||/||eps|| is the precursor; K calibrated at 10; F3b carried-momentum cap implemented (`carried_cap`) and run 2026-10-07: it does NOT prevent the catastrophe (capped 4/5 fail vs baseline 5/6); it slows the approach and the run then dies via the uncapped probe (see Phase F, F3b RESULT). F3c (rewind when the cap keeps binding + probe guard) implemented 2026-10-07, ON HOLD. Root cause found 2026-10-07: the Gram is centred after the uncentered NTK (float32 cancellation, ~77% step error on E15 s6); F4d `gram_center_first` implemented in all four SR optimizers. F4d one-step check done (step error 83% -> 11%) and F4d replay run 2026-10-08: 6/6 still fail; numerics fixed (bound ratio < 1 through every approach) but the probe diverges before every event while beta is frozen at ~0.997 (see Phase F, F4d RESULT). Step 0 done 2026-10-08 (r_ip alarm dead: it fires routinely on stable systems). F5 run 2026-10-08/09: the beta* guard survives 6/6 N2 replays (F4d 6/6 failed) but binds on ~100% of rows on every system, cutting momentum to ~0.2-0.6 (see Phase F, F5 RESULT). Route chosen 2026-10-09: adopt F5 as a method. F6 run and read 2026-10-12: 0/34 diverge but the method is 3-8x less accurate on every system (stretched N2 eval 291 mHa); F5 method REJECTED (Phase F, F6 RESULT). Next action: user to choose between a noise-corrected guard, F3c rewind with F4d, or the fixed-momentum control; read per-seed F6 N2-4.0 eval vs training tail first. Superseded next action: `sbatch slurm/f6_guard_scratch_100k.sbatch`. Superseded next action: read the same-epoch energies, then choose between the attribution control, adopting F5, or a noise-corrected guard. Superseded next action: `sbatch slurm/f5_beta_star_guard.sbatch`, readout `f2_replay_summary.py --carried --guard --pattern "f5_*"`. Superseded next action: beta-ceiling replay (F4d on, beta <= 0.99, needs a new key), then a controller stability channel or F3c with F4d on. Superseded next action: rerun `f4_one_step_check.py` to confirm the F4d rows match f64, then `sbatch slurm/f4d_n2_center_first.sbatch`. Superseded next action: read the E15 s6 cap-arm .out (`_9`), run `f2_replay_summary.py --sustained` on the F3b and F2 logroots to pick W/M, then `sbatch --export=ALL,SG_W=..,SG_M=.. slurm/f3c_n2_cap_rewind.sbatch` (Phase F, F3c IMPLEMENTED).** Original F1 command:
      `python slurm/n2_failure_anatomy.py --logdirs "/global/scratch/users/$USER/vmcnet_logs/phase_e/e1[4-9]*/*N2_4.0*"`
      (zero GPU). It checks SPRING's exact bound at every epoch. Its answer decides
      whether F2's numerical guard alone can prevent the first catastrophe, or only rescue
