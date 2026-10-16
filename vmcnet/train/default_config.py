@@ -290,9 +290,6 @@ def get_default_vmc_config() -> Dict:
                 "damping": 0.001,
                 "constrain_norm": True,
                 "norm_constraint": 0.001,
-                # F4d: centre the Gram rows BEFORE the contraction (float32
-                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
-                "gram_center_first": False,
             },
             "minsr_momentum": {
                 # Learning rate settings. The SPRING paper tunes eta per method and
@@ -310,9 +307,6 @@ def get_default_vmc_config() -> Dict:
                 "damping": 0.001,
                 "constrain_norm": True,
                 "norm_constraint": 0.001,
-                # F4d: centre the Gram rows BEFORE the contraction (float32
-                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
-                "gram_center_first": False,
             },
             "gauss_newton": {
                 # Learning rate settings
@@ -346,41 +340,6 @@ def get_default_vmc_config() -> Dict:
                 "probe_damping": 1e-3,
                 "adaptive_eta": False,  # eta_main = 1 - beta*(1 - lr(step))
                 "adaptive_probe": False,  # probe uses eta_main instead of probe_lr
-                # Phase F (docs/CAMPAIGN_LOG.md). Both off = unchanged update path.
-                # diagnostics: log diag_* metrics of the main solve (bound ratio,
-                # equation residual, Gram spectrum, walker row-norm tail, ...).
-                "diagnostics": False,
-                # safeguard: detect -> skip -> (repeat) rewind + momentum reset.
-                "safeguard": False,
-                "safeguard_step_ratio": 3.0,  # pre-clip step vs trailing median
-                "safeguard_bound_ratio": 3.0,  # diag_bound_ratio threshold
-                "safeguard_window": 500,  # trailing-median window (accepted steps)
-                "safeguard_min_fill": 100,  # entries before the median test is live
-                "safeguard_start_step": 1000,  # no triggers during init chaos
-                "safeguard_rewind_within": 100,  # 2nd trigger within -> rewind
-                "safeguard_snapshot_every": 250,  # rewind target 250-500 steps old
-                "safeguard_beta_cap": 0.99,  # beta cap held after a rewind
-                "safeguard_hold_steps": 2000,
-                # F3c: also rewind (no skip first) once diag_carried_over_eps >
-                # safeguard_carried_k on safeguard_carried_count of the last
-                # safeguard_carried_window steps. Window 0 = this trigger off. With
-                # the safeguard on, a non-finite probe residual also rewinds and a
-                # non-finite probe ratio cannot reach beta.
-                "safeguard_carried_k": 10.0,
-                "safeguard_carried_window": 0,
-                "safeguard_carried_count": 5,
-                # carried_cap (F3b): if > 0, shrink the carried momentum so that
-                # ||A(beta phi)|| <= carried_cap * ||eps|| on each step's walkers.
-                # 0 = off. Calibrated value from the F2 replays: 10.
-                "carried_cap": 0.0,
-                # beta_star_guard (F4a): main momentum = min(beta, 2 beta*), where
-                # beta* = <eps, A phi>/||A phi||^2 is the momentum that best fits this
-                # step's target on its walkers; past 2 beta* the carried term raises
-                # the residual left for the solve. No tunable constant. Off = original.
-                "beta_star_guard": False,
-                # F4d: centre the Gram rows BEFORE the contraction (float32
-                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
-                "gram_center_first": False,
             },
             "prime_sr": {
                 # Learning rate settings
@@ -396,9 +355,6 @@ def get_default_vmc_config() -> Dict:
                 # behavior); lower values are an ABLATION knob only, to test
                 # whether PRIME-SR failures come from mu_k overshooting.
                 "mu_cap": 1.0,
-                # F4d: centre the Gram rows BEFORE the contraction (float32
-                # cancellation fix, vmcnet/updates/sr_kernel.py). Off = original.
-                "gram_center_first": False,
             },
         },
     }
