@@ -57,10 +57,28 @@ def _f6_seed(i):
     return i - _f6_block(i)[1]
 
 
-# Phase G systems in array order (g1/g2/g3_*.sbatch); index = system_index*5 + seed.
+# Phase G systems in array order (g1/g2/g3_*.sbatch): SS-SPRING (5 seeds) at
+# system_index*5 + seed, then SPRING(0.99) (3 seeds) at nsys*5 + system_index*3 + seed.
 _G_SYSTEMS = {"G1": ["N2_2.4", "N2_2.8", "N2_3.2", "N2_3.6"],
               "G2": ["C2", "CO_4.0"],
               "G3": ["H10_1.8", "H10_3.6", "H4_1.0"]}
+
+
+def _g_cell(experiment):
+    """Index -> (arm label carrying the system, seed)."""
+    systems = _G_SYSTEMS[experiment]
+    nssu = len(systems) * 5
+
+    def cell(i):
+        if i < nssu:
+            return f"ssu_{systems[i // 5]}", i % 5
+        j = i - nssu
+        return f"spring0.99_{systems[j // 3]}", j % 3
+    return cell
+
+
+def _g_ntasks(experiment):
+    return len(_G_SYSTEMS[experiment]) * (5 + 3)
 
 
 # Job-name globs, matching the sbatch --job-name of each experiment. Keep these
@@ -97,18 +115,16 @@ EXPERIMENTS = {
     # Parse with `--experiment E14 E15 F6`. The arm label carries the system.
     "F6": dict(pattern="slurm-f6-guard-100k-*_{idx}.out", ntasks=34, nepochs=100000,
                cell=lambda i: (f"ssu_guard_{_f6_system(i)}", _f6_seed(i))),
-    # Phase G: the original SS-SPRING on more strongly correlated systems, 5 seeds per
-    # system, index = system_index*5 + seed. The arm label carries the system so the
-    # per-arm verdict is one divergence fraction per system. Parse G1 with E14 E15 to
+    # Phase G: the original SS-SPRING (5 seeds) and SPRING(0.99) (3 seeds) on more
+    # strongly correlated systems. The arm label carries the system so the per-arm
+    # verdict is one divergence fraction per arm and system. Parse G1 with E14 E15 to
     # see the whole N2 bond scan.
-    "G1": dict(pattern="slurm-g1-n2-scan-*_{idx}.out", ntasks=20, nepochs=100000,
-               cell=lambda i: (f"ssu_{_G_SYSTEMS['G1'][i // 5]}", i % 5)),
-    "G2": dict(pattern="slurm-g2-heavy-strongcorr-*_{idx}.out", ntasks=10,
-               nepochs=100000,
-               cell=lambda i: (f"ssu_{_G_SYSTEMS['G2'][i // 5]}", i % 5)),
-    "G3": dict(pattern="slurm-g3-hydrogen-strongcorr-*_{idx}.out", ntasks=15,
-               nepochs=100000,
-               cell=lambda i: (f"ssu_{_G_SYSTEMS['G3'][i // 5]}", i % 5)),
+    "G1": dict(pattern="slurm-g1-n2-scan-*_{idx}.out", ntasks=_g_ntasks("G1"),
+               nepochs=100000, cell=_g_cell("G1")),
+    "G2": dict(pattern="slurm-g2-heavy-strongcorr-*_{idx}.out", ntasks=_g_ntasks("G2"),
+               nepochs=100000, cell=_g_cell("G2")),
+    "G3": dict(pattern="slurm-g3-hydrogen-strongcorr-*_{idx}.out",
+               ntasks=_g_ntasks("G3"), nepochs=100000, cell=_g_cell("G3")),
 }
 
 

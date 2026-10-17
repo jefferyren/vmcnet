@@ -333,22 +333,39 @@ def _f6_cell(idx):
     raise IndexError(f"F6 has no array index {idx}")
 
 
-# Phase G: the ORIGINAL SS-SPRING (ssu_defaults, tag ss-spring-original) on more
-# strongly correlated systems, 5 seeds each. Index = system_index*5 + seed, mirroring
-# g1_n2_bond_scan / g2_heavy_strong_correlation / g3_hydrogen_strong_correlation.sbatch.
+# Phase G: the ORIGINAL code (tag ss-spring-original) on more strongly correlated
+# systems, mirroring g1_n2_bond_scan / g2_heavy_strong_correlation /
+# g3_hydrogen_strong_correlation.sbatch. SS-SPRING (5 seeds) first at
+# system_index*5 + seed, then SPRING(0.99) (3 seeds) at
+# nsys*5 + system_index*3 + seed -- the comparison arm, since most of these systems
+# have no reference energy.
 G_SYSTEMS = {"G1": (["N2_2.4", "N2_2.8", "N2_3.2", "N2_3.6"], 0.002),
              "G2": (["C2", "CO_4.0"], 0.002),
              "G3": (["H10_1.8", "H10_3.6", "H4_1.0"], 0.02)}
 
 
+def g_arm_system_seed(experiment, idx):
+    """Array index -> (arm, system, seed) for a Phase G experiment."""
+    systems = G_SYSTEMS[experiment][0]
+    nssu = len(systems) * 5
+    if idx < nssu:
+        return "ssu_defaults", systems[idx // 5], idx % 5
+    j = idx - nssu
+    return "spring_mu0.99", systems[j // 3], j % 3
+
+
+def g_ntasks(experiment):
+    return len(G_SYSTEMS[experiment][0]) * (5 + 3)
+
+
 def _g_cell(experiment):
-    systems, eta = G_SYSTEMS[experiment]
+    eta = G_SYSTEMS[experiment][1]
 
     def cell(idx):
-        system, seed = systems[idx // 5], idx % 5
-        return f"{experiment.lower()}_{system}_ssu_defaults_s{seed}", dict(
-            x_experiment=experiment, x_system=system, x_arm="ssu_defaults",
-            x_seed=seed, x_eta=eta)
+        arm, system, seed = g_arm_system_seed(experiment, idx)
+        return f"{experiment.lower()}_{system}_{arm}_s{seed}", dict(
+            x_experiment=experiment, x_system=system, x_arm=arm, x_seed=seed,
+            x_eta=eta)
     return cell
 
 
@@ -407,13 +424,14 @@ EXPERIMENTS = {
     "F6": dict(pattern="slurm-f6-guard-100k-*_{idx}.out", ntasks=34,
                cell=_f6_cell, nepochs=100000, group_by="system",
                project="vmcnet-phase-f"),
-    "G1": dict(pattern="slurm-g1-n2-scan-*_{idx}.out", ntasks=20,
+    "G1": dict(pattern="slurm-g1-n2-scan-*_{idx}.out", ntasks=g_ntasks("G1"),
                cell=_g_cell("G1"), nepochs=100000, group_by="system",
                project="vmcnet-phase-g"),
-    "G2": dict(pattern="slurm-g2-heavy-strongcorr-*_{idx}.out", ntasks=10,
+    "G2": dict(pattern="slurm-g2-heavy-strongcorr-*_{idx}.out", ntasks=g_ntasks("G2"),
                cell=_g_cell("G2"), nepochs=100000, group_by="system",
                project="vmcnet-phase-g"),
-    "G3": dict(pattern="slurm-g3-hydrogen-strongcorr-*_{idx}.out", ntasks=15,
+    "G3": dict(pattern="slurm-g3-hydrogen-strongcorr-*_{idx}.out",
+               ntasks=g_ntasks("G3"),
                cell=_g_cell("G3"), nepochs=100000, group_by="system",
                project="vmcnet-phase-g"),
 }
