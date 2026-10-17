@@ -63,7 +63,9 @@ REFERENCES = {"N": -54.5892, "O": -75.0673, "carbon": -37.8450,
               # the others this is not a clamped-nuclei electronic calculation, so it
               # carries mHa-level adiabatic/relativistic content -- fine for ranking
               # arms, flag the source when quoting an absolute error.
-              "N2_4.0": -109.2021}
+              "N2_4.0": -109.2021,
+              # FCI/CBS, Lin, Goldshlager & Lin, arXiv:2112.03491, Table II.
+              "H4_1.0": -1.4390}
 
 
 def reference_for(system):
@@ -331,6 +333,25 @@ def _f6_cell(idx):
     raise IndexError(f"F6 has no array index {idx}")
 
 
+# Phase G: the ORIGINAL SS-SPRING (ssu_defaults, tag ss-spring-original) on more
+# strongly correlated systems, 5 seeds each. Index = system_index*5 + seed, mirroring
+# g1_n2_bond_scan / g2_heavy_strong_correlation / g3_hydrogen_strong_correlation.sbatch.
+G_SYSTEMS = {"G1": (["N2_2.4", "N2_2.8", "N2_3.2", "N2_3.6"], 0.002),
+             "G2": (["C2", "CO_4.0"], 0.002),
+             "G3": (["H10_1.8", "H10_3.6", "H4_1.0"], 0.02)}
+
+
+def _g_cell(experiment):
+    systems, eta = G_SYSTEMS[experiment]
+
+    def cell(idx):
+        system, seed = systems[idx // 5], idx % 5
+        return f"{experiment.lower()}_{system}_ssu_defaults_s{seed}", dict(
+            x_experiment=experiment, x_system=system, x_arm="ssu_defaults",
+            x_seed=seed, x_eta=eta)
+    return cell
+
+
 # `group_by` is how report() keys the per-arm summary: "system" for the multi-system
 # experiments, "eta" for the learning-rate sweeps. `project` is the wandb project the
 # runs land in, so E and D experiments can be parsed in one invocation without the
@@ -386,6 +407,15 @@ EXPERIMENTS = {
     "F6": dict(pattern="slurm-f6-guard-100k-*_{idx}.out", ntasks=34,
                cell=_f6_cell, nepochs=100000, group_by="system",
                project="vmcnet-phase-f"),
+    "G1": dict(pattern="slurm-g1-n2-scan-*_{idx}.out", ntasks=20,
+               cell=_g_cell("G1"), nepochs=100000, group_by="system",
+               project="vmcnet-phase-g"),
+    "G2": dict(pattern="slurm-g2-heavy-strongcorr-*_{idx}.out", ntasks=10,
+               cell=_g_cell("G2"), nepochs=100000, group_by="system",
+               project="vmcnet-phase-g"),
+    "G3": dict(pattern="slurm-g3-hydrogen-strongcorr-*_{idx}.out", ntasks=15,
+               cell=_g_cell("G3"), nepochs=100000, group_by="system",
+               project="vmcnet-phase-g"),
 }
 
 
@@ -548,7 +578,10 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "E17": "e17_n2_stretched_eta_sweep",
            "E18": "e18_n2_stretched_eta0015",
            "E19": "e19_n2_stretched_normcap",
-           "F6": "f6_guard_scratch_100k"}
+           "F6": "f6_guard_scratch_100k",
+           "G1": "g1_n2_bond_scan",
+           "G2": "g2_heavy_strong_correlation",
+           "G3": "g3_hydrogen_strong_correlation"}
 
 
 def report(experiment, rows, duplicates):

@@ -1,0 +1,40 @@
+{
+    "notes": "C2 at equilibrium, bond length 2.348 Bohr (1.2425 Angstrom), X1Sigma_g+ singlet, 12 electrons. Phase G2: strongly multireference at equilibrium, i.e. static correlation without a stretched bond. Molecular eta 0.002. Reference energy not pinned yet.",
+    "subfolder_name": "C2",
+    "problem": {
+        "ion_pos": [
+            [
+                0.0,
+                0.0,
+                -1.174
+            ],
+            [
+                0.0,
+                0.0,
+                1.174
+            ]
+        ],
+        "ion_charges": [
+            6.0,
+            6.0
+        ],
+        "nelec": [
+            6,
+            6
+        ]
+    },
+    "vmc": {
+        "nchains": 1000,
+        "nepochs": 100000,
+        "nburn": 5000,
+        "nsteps_per_param_update": 10,
+        "clip_threshold": 5.0,
+        "clip_center": "mean"
+    },
+    "eval": {
+        "nchains": 2000,
+        "nburn": 10000,
+        "nepochs": 20000,
+        "nsteps_per_param_update": 10
+    }
+}

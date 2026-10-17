@@ -32,6 +32,10 @@
         "H4_square_4.0": {
             "value": -2.0301,
             "source": "This project: FCI/cc-pVTZ, square side 4.0 Bohr, Sz=0 ground state (singlet; the triplet is the first excited state, +11.4 mHa at TZ). PRELIMINARY: aug-cc-pVTZ/CBS refinement pending -- expect the converged value 1-3 mHa lower. Uncertainty ~3 mHa; prefer relative-energy comparisons on H4."
+        },
+        "H4_square_1.0": {
+            "value": -1.4390,
+            "source": "Lin, Goldshlager & Lin, arXiv:2112.03491, Table II: FCI extrapolated to the complete basis set (their Appendix D), square side 1.0 Bohr. RHF -1.2863, UHF -1.3358."
         }
     },
     "fci_details": {

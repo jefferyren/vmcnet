@@ -1,0 +1,52 @@
+{
+    "notes": "H4 square, 1.0 Bohr side -- the compressed geometry of Lin, Goldshlager & Lin, arXiv:2112.03491 (Fig. 7, Table II); H4.json is their 4.0 Bohr square. Singlet (2,2). Their FCI/CBS reference is -1.4390 Ha (RHF -1.2863, UHF -1.3358). Settings mirror H4.json; hydrogen-family eta 0.02.",
+    "subfolder_name": "H4_1.0",
+    "problem": {
+        "ion_pos": [
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                1.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                1.0,
+                0.0
+            ],
+            [
+                1.0,
+                1.0,
+                0.0
+            ]
+        ],
+        "ion_charges": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "nelec": [
+            2,
+            2
+        ]
+    },
+    "vmc": {
+        "nchains": 1000,
+        "nepochs": 100000,
+        "nburn": 5000,
+        "nsteps_per_param_update": 10,
+        "clip_threshold": 5.0,
+        "clip_center": "mean"
+    },
+    "eval": {
+        "nchains": 2000,
+        "nburn": 5000,
+        "nepochs": 20000,
+        "nsteps_per_param_update": 10
+    }
+}

@@ -1,0 +1,40 @@
+{
+    "notes": "N2 at bond length 3.6 Bohr, Phase G1 bond scan between N2_eq (2.016) and N2_4.0. Same 14-electron singlet, walkers and eval as N2_4.0.json so the scan changes only the geometry. Molecular eta 0.002 -- set it per run. eval nburn 10000 as for N2 (SPRING paper Table B.4). Reference energy not pinned yet (candidates: Le Roy MLR4(6,8) potential as for N2_4.0, or Gdanitz 1998 r12-MR-ACPF).",
+    "subfolder_name": "N2_3.6",
+    "problem": {
+        "ion_pos": [
+            [
+                0.0,
+                0.0,
+                -1.8
+            ],
+            [
+                0.0,
+                0.0,
+                1.8
+            ]
+        ],
+        "ion_charges": [
+            7.0,
+            7.0
+        ],
+        "nelec": [
+            7,
+            7
+        ]
+    },
+    "vmc": {
+        "nchains": 1000,
+        "nepochs": 100000,
+        "nburn": 5000,
+        "nsteps_per_param_update": 10,
+        "clip_threshold": 5.0,
+        "clip_center": "mean"
+    },
+    "eval": {
+        "nchains": 2000,
+        "nburn": 10000,
+        "nepochs": 20000,
+        "nsteps_per_param_update": 10
+    }
+}
