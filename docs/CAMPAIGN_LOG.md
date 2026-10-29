@@ -1,7 +1,13 @@
 # Campaign log — SS-SPRING vs SPRING vs PRIME-SR
 
 **Handoff document.** Read this first in a new session; it is self-contained. Last
-updated 2026-10-08: §5 Phase F **F4d RESULT** (centre-first Gram fixes the float32
+updated 2026-10-29: §5 **Phase G RESULT** (the original SS-SPRING on more strongly
+correlated systems: it fails only on stretched heavy-atom multiple bonds — N2 from ~3.2
+Bohr, CO at 4.0 — and is clean on C2, stretched H10 and both H4 squares; §4 item 16).
+The optimizer code on master is now the original E14 code again (tag
+`ss-spring-original`); Phase F's flags are gone. Before that, 2026-10-12: §5 Phase F
+**F6 RESULT** (the β\* guard as a method: stable but 3-8x less accurate, rejected).
+Before that, 2026-10-08: §5 Phase F **F4d RESULT** (centre-first Gram fixes the float32
 numerics but not the catastrophe: 6/6 fail; the probe diverges before every event while
 β stays frozen at ~0.997). Before that, 2026-10-07: **F3b RESULT** (carried-momentum cap fails). Before
 that, 2026-10-01: added **§5 Phase F**, the plan to stabilise SS-SPRING on stretched
@@ -16,6 +22,13 @@ list and the regret framing. 12 panels spanning all three wandb projects. Built 
 `slurm/report_campaign_summary.py`, which edits in place via `from_url` (a bare
 `wr.Report()` + `save()` would mint a duplicate). Re-verify after any change.
 
+> **Update (2026-10-29), Phase G: the failure is specific to stretched heavy-atom
+> multiple bonds, not to strong correlation.** On 72 new runs with the original
+> SS-SPRING code, SS-SPRING diverges on N2 at 3.2 Bohr (1/5) and 3.6 Bohr (5/5), and on
+> CO at 4.0 Bohr (1/5). It is clean on N2 at 2.4 and 2.8, C2, the H10 chain at 1.8 and
+> 3.6 Bohr, and the 1.0 Bohr H4 square. SPRING(0.99) diverges nowhere (0/27). Where
+> SS-SPRING survives it ties SPRING(0.99) (all differences within ~2.3σ). See §5 Phase G.
+>
 > **Current state (2026-09-25): all phases complete, and the stretched-N2 divergence is
 > diagnosed.**
 >
@@ -269,6 +282,16 @@ and re-proposing them wastes GPU-hours.
     within-condition contrast (matched eta, and beta 0.99714 vs 0.99716: 35%/37% capped
     survived, 80% diverged). Cap fraction is collinear with the raw step norm by
     construction, which is why E19 had to intervene rather than infer.
+    **Phase G (2026-10-29) confirms this out of sample:** on 45 new SS-SPRING runs,
+    AUC 0.97, but the 7 diverged sit at 58-99% and the top survivors at 60-75%, so
+    "> 60% diverges" catches 6/7 with 4 false alarms in 38.
+16. **Strong static correlation is what breaks SS-SPRING.** **Refuted** (Phase G,
+    2026-10-29). SS-SPRING ran 0/5 diverged on each of C2 (multireference at
+    equilibrium), the H10 chain stretched to 3.6 Bohr, and the H4 squares at 1.0 and
+    4.0 Bohr, and tied SPRING(0.99) on all of them. What fails is a **stretched
+    heavy-atom multiple bond**: N2 at 2.4 / 2.8 / 3.2 / 3.6 / 4.0 Bohr diverges on
+    0/5, 0/5, 1/5, 5/5, 6/8, and CO at 4.0 Bohr on 1/5. SPRING(0.99) diverged on 0/27
+    Phase G runs. Do not describe the failure as "strongly correlated systems".
 
 **Still unexplained:** SS-SPRING beats SPRING(0.99) on carbon by ~0.10 mHa at ~2σ, and
 it is neither the warm-up (E6) nor the converged constant (E8). What remains is beta's
@@ -280,7 +303,11 @@ stretched N2 specifically (item 9). The divergence mechanism is established; its
 cause is not. The natural explanation — a broken triple bond is strongly multireference,
 so the Gram matrix keeps a near-degenerate cluster and the damped solve keeps returning
 large steps — is inference: Gram eigenvalues are not logged. A referee will ask whether
-the same failure lurks on other stretched or multireference systems. **§5 Phase F
+the same failure lurks on other stretched or multireference systems. **Answered by §5
+Phase G (2026-10-29): multireference alone does not do it** (C2, stretched H10 and both
+H4 squares are clean, §4 item 16); stretched heavy-atom multiple bonds do (N2 from
+3.2 Bohr up, CO at 4.0). So "multireference, hence a near-degenerate Gram cluster" is
+not enough on its own as an explanation. **§5 Phase F
 (2026-10-01) lists the candidate upstream causes, each with a test:** numerical
 breakdown of the float32 Gram solve, heavy-tailed per-walker Jacobian rows, raw
 electron–nuclear input features at a long bond, and slow inter-atom MCMC mixing.
@@ -1458,6 +1485,10 @@ every system, so it is worse than every existing arm.**
 | CO | 36.06 ± 1.38 | 8.33 ± 0.21 | 11.22 | 8.84 | +27.7 (4.3×) |
 | N2-4.0 | 291.5 ± 113.3 (worst 953.8, n=8) | 12.27 (n=2 survivors of 8) | 17.61 | 14.99 | — |
 
+- **Report:** [F6 β\* guard from scratch vs PRIME-SR, SPRING and SS-SPRING — all molecules](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-e/reports/F6-beta*-guard-from-scratch-vs-PRIME-SR,-SPRING-and-SS-SPRING-—-all-molecules--VmlldzoxODA5ODE0NQ==)
+  (`slurm/report_f6_guard.py`). It has F5's four sections plus an eval-energy section,
+  with one subsection per molecule. The F6 runsets fill only after a scoped
+  `wandb sync --legacy` and `parse_eval_energies.py --experiment F6 --backfill`.
 - **Every system loses, by many standard errors.** F6 is behind every arm, including
   SPRING at μ = 0.9 on N2-eq (17.9) and CO (16.3). On H4 it trails even the mistuned
   μ = 0.8 arm (−2.03393). F4d is on too, and the two flags are not separated. But
@@ -1480,9 +1511,32 @@ every system, so it is worse than every existing arm.**
   is the same signature as F4d's 0.5–0.9 Ha dip before the N2 events. A reading,
   unverified: with little momentum, each step fits the noise of its own walker batch,
   and the walkers then report a low energy that the wavefunction does not have.
-- **Stretched N2: eval is worse than the end of training on some seeds.** The eval
-  mean is 291 mHa (worst 954), against a final training block of 30–209. Per-seed
-  eval, eval variance and training tail are not read yet.
+- **Stretched N2: the eval exposes a heavy-tailed local energy that training never
+  sampled (per seed, read 2026-10-12).** "Tail" is the mean of the last 12% of
+  training, in mHa above −109.2021.
+
+  | seed | eval | training tail | eval − tail | eval variance [Ha²] |
+  |---|---|---|---|---|
+  | s0 | 954 | 100 | +854 | 52.8 |
+  | s1 | 76 | 59 | +17 | 4.4 |
+  | s2 | 51 | 50 | +1 | 2.6 |
+  | s3 | 541 | 142 | +399 | 26.9 |
+  | s4 | 384 | 141 | +243 | 19.1 |
+  | s5 | 77 | 64 | +13 | 4.5 |
+  | s6 | 84 | 70 | +14 | 4.7 |
+  | s7 | 164 | 82 | +82 | 9.3 |
+
+  - The eval − tail gap tracks the eval variance almost exactly: correlation 0.999
+    over 8 seeds.
+  - Four seeds (s0, s3, s4, s7) have eval variance 9–53 Ha² and lose 82–854 mHa at
+    eval. So the wavefunction has regions of huge local energy that the fresh,
+    longer-burned eval walkers find and the training walkers did not. That is the
+    "fits its own walkers" signature again, now at full scale.
+  - Even the four clean seeds sit at 51–84 mHa, 3–6× SPRING (15.0) and PRIME-SR (17.6).
+    Their training tails are 50–70 mHa, so the training itself never got close.
+  - Healthy scale: the old SS-SPRING survivors E15 s4/s5 have eval variance
+    0.26 / 0.19 Ha² (wandb `x_eval_variance`). So F6 is 10–200× above healthy on every
+    stretched-N2 seed, and the D10 CO SS-SPRING cells sit at 0.16–0.18.
 - **What this settles.**
   - A guard that binds on every row is a different, worse optimizer. Cutting momentum
     to ~0.5 buys stability at 3–8× the error on the stable systems.
@@ -1755,6 +1809,122 @@ most, since identical inits survive under SPRING(0.99), but it is cheap to settl
   - [He et al. 2015](https://arxiv.org/abs/1502.01852)
   - [Glorot & Bengio 2010](https://proceedings.mlr.press/v9/glorot10a.html)
 
+### Phase G — COMPLETE: is stretched N2 a common failure on strongly correlated systems? (72 runs, read 2026-10-29)
+
+**Report:** [Phase G — original SS-SPRING on strongly correlated systems](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-g/reports/Phase-G-—-original-SS-SPRING-on-strongly-correlated-systems--VmlldzoxODIwNTIxNQ==)
+(`slurm/report_g_strong_correlation.py`).
+
+**Why.** SS-SPRING diverged on N2 at 4.0 Bohr (6/8 seeds, E14+E15) and on nothing else.
+But one strongly correlated system was already a pass: the H4 square at 4.0 Bohr (D7,
+0/5 diverged, −2.03421 Ha against the −2.0342 FCI/CBS of Lin, Goldshlager & Lin,
+arXiv:2112.03491). Phase G asks whether the N2 failure is common on strongly correlated
+systems or specific to that one. **The code is the original SS-SPRING:** `vmcnet/*.py`
+was restored to d9605b5 (E14's commit) in e3a68e7 and tagged `ss-spring-original`, and
+every script refuses to run on any other code. This removes every Phase F flag,
+including F4d's `gram_center_first`; the F2-F6 sbatch files no longer run on master.
+
+**What ran.** SS-SPRING (`ssu_defaults`, 5 seeds) and SPRING mu=0.99 (3 seeds, the
+comparison arm, since most of these systems have no reference energy), E14's settings,
+100k + eval, wandb project `vmcnet-phase-g`.
+
+| | systems | eta | runs |
+|---|---|---|---|
+| G1 | N2 at 2.4, 2.8, 3.2, 3.6 Bohr (between N2-eq 2.016 and 4.0) | 0.002 | 32 |
+| G2 | C2 at equilibrium (2.348 Bohr, multireference without stretching); CO stretched to 4.0 Bohr | 0.002 | 16 |
+| G3 | H10 chain at 1.8 and 3.6 Bohr; H4 square at 1.0 Bohr | 0.02 | 24 |
+
+**Pre-registered readouts.** Divergence fraction per system (5 seeds: 0/5 would occur
+0.1% of the time at N2-4.0's rate, and bounds the per-seed rate below ~45%). Norm-cap
+fraction over epochs 0-12k as an out-of-sample test of §4 item 15, predicting that
+runs above ~60% diverge. Eval energy against SPRING(0.99).
+
+**RESULT 1: the failure is a stretched heavy-atom multiple bond, not strong
+correlation.** Divergence (`divergence_check.py`):
+
+| system | SS-SPRING | SPRING(0.99) | SS-SPRING healthy until (diverged seeds) |
+|---|---|---|---|
+| N2 2.016 (D10) | 0/3 | 0/3 | — |
+| N2 2.4 | 0/5 | 0/3 | — |
+| N2 2.8 | 0/5 | 0/3 | — |
+| N2 3.2 | **1/5** | 0/3 | s0 15.5k |
+| N2 3.6 | **5/5** | 0/3 | 13.0k-29.6k |
+| N2 4.0 (E14+E15) | **6/8** | 0/3 | 11.2k-61.1k |
+| C2 | 0/5 | 0/3 | — |
+| CO 4.0 | **1/5** | 0/3 | s2 20.9k |
+| H10 1.8 / 3.6 | 0/5 / 0/5 | 0/3 / 0/3 | — |
+| H4 1.0 / 4.0 (D7) | 0/5 / 0/5 | 0/3 / 0/5 | — |
+
+- On N2 it is a clean dose-response in bond length: onset between 2.8 and 3.2 Bohr,
+  every seed by 3.6. 3.6 is worse than 4.0 (5/5 vs 6/8); within noise.
+- Strong correlation without a heavy-atom bond is clean: C2, stretched H10 and both H4
+  squares, 0/25 between them.
+- CO at 4.0 Bohr, the isoelectronic twin of N2-4.0, fails less often (1/5) but does fail.
+- SPRING(0.99) never diverges: 0/27 in Phase G, 0/3 more on N2-4.0. The failure is
+  still SS-SPRING's (or high momentum's, per E16: SPRING at 0.995 fails 2/3 on N2-4.0).
+
+**RESULT 2: where SS-SPRING survives, it ties or beats SPRING(0.99).** Eval energies,
+SS-SPRING minus SPRING in mHa (negative = SS-SPRING lower), all n = 5 vs 3 unless noted:
+
+| system | SS-SPRING [Ha] | SPRING(0.99) [Ha] | difference [mHa] |
+|---|---|---|---|
+| N2 2.4 | −109.48135 | −109.48032 | −1.03 ± 0.44 |
+| N2 2.8 | −109.36975 | −109.36931 | −0.44 ± 0.57 |
+| N2 3.2 | −109.27500 (n=4) | −109.27498 | −0.02 ± 1.56 |
+| N2 3.6 | — (0 survivors) | −109.21422 | — |
+| C2 | −75.91387 | −75.91510 | +1.23 ± 3.58 |
+| CO 4.0 | −112.96877 (n=4) | −112.96886 | +0.08 ± 6.79 |
+| H10 1.8 | −5.66327 | −5.66325 | −0.02 (tie; s.e.m. < 0.01) |
+| H10 3.6 | −5.15493 | −5.15544 | +0.50 ± 0.39 |
+| H4 1.0 | 0.175 mHa above FCI/CBS | 0.176 above | tie |
+
+- No system is separated by more than ~2.3σ. N2 2.4 is SS-SPRING's best (−1.0 ± 0.4);
+  H10 3.6 its worst (+0.5 ± 0.4).
+- Survivors are healthy: eval variance 0.17-0.30 Ha² on the N2 and CO 4.0 survivors and
+  0.08-0.10 on C2, the same scale as SPRING (0.18-0.26 and 0.10-0.13), unlike F6's
+  2.6-53. So survival here means a
+  sound wavefunction, not a run that limped to 100k.
+- N2 3.2 and CO 4.0 means are survivor-only (4 of 5 seeds).
+- H4 at 1.0 Bohr: both methods reach −1.43883 Ha, 0.175 mHa above the paper's CBS
+  −1.4390, which has about that much basis-extrapolation uncertainty itself.
+
+**RESULT 3: the cap-binding warning sign holds out of sample, as a risk factor only.**
+Norm-cap fraction over epochs 0-12k, per SS-SPRING seed (* = diverged), from wandb
+history (`norm_cap_applied`; this reproduces E15's logged 66.5/65.5%):
+
+| system | SS-SPRING cap 0-12k [%] | SS-SPRING cap 8-10k [%] | SPRING cap 0-12k [%] |
+|---|---|---|---|
+| N2 2.4 | 46 42 45 47 53 | 0 | 31-38 |
+| N2 2.8 | 48 53 48 62 56 | 1 | 33-38 |
+| N2 3.2 | 83* 56 60 75 59 | 22 | 34-36 |
+| N2 3.6 | 60* 99* 79* 99* 69* | 51 | 34-36 |
+| N2 4.0 | 88* 68* 86* 66* 66 58 77* 93* | 45 | 33-34 |
+| C2 | 25 25 23 25 30 | 0 | 11-14 |
+| CO 4.0 | 58 61 58* 51 56 | 0 | 35-39 |
+| H10 1.8 / 3.6 | 17-21 / 7-8 | 0 | 16-18 / 8-9 |
+| H4 1.0 | 7-9 | 0 | 7 |
+
+- On the 45 Phase G SS-SPRING runs: AUC 0.97. "> 60% diverges" catches 6/7 with 4 false
+  alarms in 38; "> 65%" catches 5/7 with 1. CO 4.0 s2 died at 58%, and N2 3.2 s3
+  survived at 75%. Same verdict as §4 item 15: a strong risk factor, not a threshold.
+- The cleaner signal is late cap binding: SS-SPRING is still capped at epochs 8-10k only
+  on the N2 geometries that fail (22% at 3.2, 45-51% at 3.6-4.0), and nowhere else.
+  CO 4.0 is the exception: 0% late, yet one seed failed.
+- SS-SPRING's squared step norm before the cap is larger than SPRING's everywhere
+  (median at 8-10k: 4.0e-4 vs 2.5e-4 at N2 2.4, up to 9.8e-4 vs 3.6e-4 at 3.6) and
+  grows with bond length on N2 up to 3.6 (4.0: 9.3e-4). Its beta is 0.996 on the heavy-atom systems and 0.993-0.994 on hydrogen.
+
+**What this settles.**
+- The paper sentence becomes: SS-SPRING is stable on every system tested except
+  stretched heavy-atom multiple bonds — N2 from ~3.2 Bohr and CO at 4.0 — where it
+  diverges on a seed-dependent fraction of runs, while SPRING(0.99) does not. Where it
+  is stable it ties SPRING(0.99) without tuning.
+- "Strongly correlated systems" is the wrong scope for the failure (§4 item 16).
+- *How computed:* divergence from the slurm .out files (`divergence_check.py`, NaN marker
+  and 100-epoch blocks); eval energies from `parse_eval_energies.py` (20k eval epochs,
+  blocked errors, mean ± s.e.m. over seeds, Welch-style combined s.e.m. for the
+  difference); cap fractions from wandb history at its ~10-step logging. Only H4 1.0
+  has a reference energy; N2's spectroscopic curve values were not pinned.
+
 ### Phase D — superseded header (the plan, as written before the runs)
 
 **Why.** Both comparison papers report at 100k. E10 was visibly unconverged at 50k
@@ -1997,6 +2167,24 @@ Two more found while writing the E9/E11 reports:
   - `gram_center_first` key in all four SR optimizer blocks, default off.
   - `slurm/f4_one_step_check.py`: one-step float32 diagnosis from a checkpoint.
   - `slurm/f4d_n2_center_first.sbatch`: six failing states with the fix only.
+- **Phase G (2026-10-16):**
+  - **Every Phase F code item above is REMOVED from master** (e3a68e7): `vmcnet/` and
+    `tests/` are identical to d9605b5 (E14's commit) again, tagged `ss-spring-original`.
+    The F2-F6 sbatch files and `f4_one_step_check.py` need those keys; run them from
+    7a6116b if ever needed.
+  - Presets `N2_{2.4,2.8,3.2,3.6}`, `C2`, `CO_4.0`, `H10_{1.8,3.6}`, `H4_1.0`, and the
+    H4_1.0 FCI/CBS reference (−1.4390) in `reference_energies.json`.
+  - `slurm/g1_n2_bond_scan.sbatch`, `g2_heavy_strong_correlation.sbatch`,
+    `g3_hydrogen_strong_correlation.sbatch`. Each refuses to run unless `vmcnet/*.py`
+    matches the tag. Submit from master after `git fetch --tags`, never from the tag.
+  - G1-G3 registered in `parse_eval_energies.py` and `divergence_check.py`.
+  - `slurm/report_g_strong_correlation.py`: the Phase G wandb report.
+  - Gotcha: `slurm/sync_wandb.sh` still calls `wandb sync` without `--legacy`, which
+    fails on Savio login nodes. Phase G was synced with a manual loop scoped by
+    project name (`grep -qas vmcnet-phase-g` over each offline run dir) under `nohup`.
+    `find -newermt <date>` tests the run directory's last-modified time, which was
+    before the sync date (a filter on the sync date matched 0 of 72), so use the
+    submission date or earlier.
 
 ## 9. How to keep this document current
 
@@ -2027,7 +2215,11 @@ than measured — they are just as expensive to rediscover.
    SS-SPRING diverges on N2 at 4.0 Bohr on 6/8 seeds (§4 item 9, §5 Phase E).** It is a
    high-momentum instability — fixed SPRING at mu=0.995 also diverges there — not an
    SS-SPRING defect. Claim A still does not generalise (oxygen). Lead with Claim B *scoped
-   to stability*, and never write "never lost" again.
+   to stability*, and never write "never lost" again. **Phase G (2026-10-29) widened
+   the counterexample's scope precisely:** SS-SPRING also diverges on N2 at 3.2 and 3.6
+   Bohr and on CO at 4.0 Bohr, and is clean on C2, stretched H10 and both H4 squares —
+   so the exception is "stretched heavy-atom multiple bonds", not "strongly correlated
+   systems" (§4 item 16, §5 Phase G).
 2. **All planned compute is done.** Phases A-E: 617 runs, plus 23 in the E15-E19
    stretched-N2 follow-up. Phase D is 169/172 (the 3 misses are the appended mu=0.999
    molecular arm, which diverged at eta/(1-mu)=2); Phase E's misses and every E15-E19
@@ -2077,7 +2269,8 @@ than measured — they are just as expensive to rediscover.
 7. **Do not** re-propose: the small-N hypothesis, the warm-up mechanism, the
    matched-constant explanation, an eta sweep *as a step-size study on short runs*, beta
    locking at 1, the accumulated step as a stability predictor, the constrain_norm/phi
-   mismatch, lowering eta as the stretched-N2 fix, or cap fraction as a clean threshold.
+   mismatch, lowering eta as the stretched-N2 fix, cap fraction as a clean threshold, or
+   strong static correlation as the cause of the divergence.
    All settled — see §4.
 8. **Do not** overstate Claim A. It fails on oxygen (0/5 seeds) and carbon at eta=0.05
    (0/3). But do not swing too far the other way either: across all seven conditions
