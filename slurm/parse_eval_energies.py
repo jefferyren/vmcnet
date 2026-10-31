@@ -338,10 +338,15 @@ def _f6_cell(idx):
 # g3_hydrogen_strong_correlation.sbatch. SS-SPRING (5 seeds) first at
 # system_index*5 + seed, then SPRING(0.99) (3 seeds) at
 # nsys*5 + system_index*3 + seed -- the comparison arm, since most of these systems
-# have no reference energy.
+# have no reference energy. G4/G5 (g4_c2_stretch_scan, g5_co_stretch_scan) stretch C2
+# and CO to the N2 scan's ratios; G5 then appends extra SS-SPRING seeds (G_EXTRA).
 G_SYSTEMS = {"G1": (["N2_2.4", "N2_2.8", "N2_3.2", "N2_3.6"], 0.002),
              "G2": (["C2", "CO_4.0"], 0.002),
-             "G3": (["H10_1.8", "H10_3.6", "H4_1.0"], 0.02)}
+             "G3": (["H10_1.8", "H10_3.6", "H4_1.0"], 0.02),
+             "G4": (["C2_3.26", "C2_3.73", "C2_4.19", "C2_4.66"], 0.002),
+             "G5": (["CO_3.02", "CO_3.45", "CO_3.88", "CO_4.31"], 0.002)}
+# experiment -> (system, seeds) of SS-SPRING runs appended after the two arms.
+G_EXTRA = {"G5": ("CO_4.0", [5, 6, 7, 8, 9])}
 
 
 def g_arm_system_seed(experiment, idx):
@@ -351,11 +356,15 @@ def g_arm_system_seed(experiment, idx):
     if idx < nssu:
         return "ssu_defaults", systems[idx // 5], idx % 5
     j = idx - nssu
-    return "spring_mu0.99", systems[j // 3], j % 3
+    if j < len(systems) * 3:
+        return "spring_mu0.99", systems[j // 3], j % 3
+    system, seeds = G_EXTRA[experiment]
+    return "ssu_defaults", system, seeds[j - len(systems) * 3]
 
 
 def g_ntasks(experiment):
-    return len(G_SYSTEMS[experiment][0]) * (5 + 3)
+    extra = len(G_EXTRA[experiment][1]) if experiment in G_EXTRA else 0
+    return len(G_SYSTEMS[experiment][0]) * (5 + 3) + extra
 
 
 def _g_cell(experiment):
@@ -433,6 +442,12 @@ EXPERIMENTS = {
     "G3": dict(pattern="slurm-g3-hydrogen-strongcorr-*_{idx}.out",
                ntasks=g_ntasks("G3"),
                cell=_g_cell("G3"), nepochs=100000, group_by="system",
+               project="vmcnet-phase-g"),
+    "G4": dict(pattern="slurm-g4-c2-scan-*_{idx}.out", ntasks=g_ntasks("G4"),
+               cell=_g_cell("G4"), nepochs=100000, group_by="system",
+               project="vmcnet-phase-g"),
+    "G5": dict(pattern="slurm-g5-co-scan-*_{idx}.out", ntasks=g_ntasks("G5"),
+               cell=_g_cell("G5"), nepochs=100000, group_by="system",
                project="vmcnet-phase-g"),
 }
 
@@ -599,7 +614,9 @@ SCRIPTS = {"E7": "e7_headtohead_seeds",
            "F6": "f6_guard_scratch_100k",
            "G1": "g1_n2_bond_scan",
            "G2": "g2_heavy_strong_correlation",
-           "G3": "g3_hydrogen_strong_correlation"}
+           "G3": "g3_hydrogen_strong_correlation",
+           "G4": "g4_c2_stretch_scan",
+           "G5": "g5_co_stretch_scan"}
 
 
 def report(experiment, rows, duplicates):

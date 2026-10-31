@@ -1,0 +1,40 @@
+{
+    "notes": "CO stretched to 4.31 Bohr = 1.98x the 2.173 Bohr equilibrium of CO.json, matching N2 at 4.0 Bohr (1.98x N2_eq's 2.016). Phase G follow-up stretch scan; singlet, 14 electrons; dissociates to C(3P) + O(3P); C first as in CO.json. Molecular eta 0.002. No reference energy -- compare SS-SPRING against SPRING(0.99). eval nburn 10000 as for N2/CO.",
+    "subfolder_name": "CO_4.31",
+    "problem": {
+        "ion_pos": [
+            [
+                0.0,
+                0.0,
+                -2.155
+            ],
+            [
+                0.0,
+                0.0,
+                2.155
+            ]
+        ],
+        "ion_charges": [
+            6.0,
+            8.0
+        ],
+        "nelec": [
+            7,
+            7
+        ]
+    },
+    "vmc": {
+        "nchains": 1000,
+        "nepochs": 100000,
+        "nburn": 5000,
+        "nsteps_per_param_update": 10,
+        "clip_threshold": 5.0,
+        "clip_center": "mean"
+    },
+    "eval": {
+        "nchains": 2000,
+        "nburn": 10000,
+        "nepochs": 20000,
+        "nsteps_per_param_update": 10
+    }
+}

@@ -59,9 +59,13 @@ def _f6_seed(i):
 
 # Phase G systems in array order (g1/g2/g3_*.sbatch): SS-SPRING (5 seeds) at
 # system_index*5 + seed, then SPRING(0.99) (3 seeds) at nsys*5 + system_index*3 + seed.
+# G5 then appends extra SS-SPRING seeds at one system (_G_EXTRA).
 _G_SYSTEMS = {"G1": ["N2_2.4", "N2_2.8", "N2_3.2", "N2_3.6"],
               "G2": ["C2", "CO_4.0"],
-              "G3": ["H10_1.8", "H10_3.6", "H4_1.0"]}
+              "G3": ["H10_1.8", "H10_3.6", "H4_1.0"],
+              "G4": ["C2_3.26", "C2_3.73", "C2_4.19", "C2_4.66"],
+              "G5": ["CO_3.02", "CO_3.45", "CO_3.88", "CO_4.31"]}
+_G_EXTRA = {"G5": ("CO_4.0", [5, 6, 7, 8, 9])}
 
 
 def _g_cell(experiment):
@@ -73,12 +77,16 @@ def _g_cell(experiment):
         if i < nssu:
             return f"ssu_{systems[i // 5]}", i % 5
         j = i - nssu
-        return f"spring0.99_{systems[j // 3]}", j % 3
+        if j < len(systems) * 3:
+            return f"spring0.99_{systems[j // 3]}", j % 3
+        system, seeds = _G_EXTRA[experiment]
+        return f"ssu_{system}", seeds[j - len(systems) * 3]
     return cell
 
 
 def _g_ntasks(experiment):
-    return len(_G_SYSTEMS[experiment]) * (5 + 3)
+    extra = len(_G_EXTRA[experiment][1]) if experiment in _G_EXTRA else 0
+    return len(_G_SYSTEMS[experiment]) * (5 + 3) + extra
 
 
 # Job-name globs, matching the sbatch --job-name of each experiment. Keep these
@@ -125,6 +133,12 @@ EXPERIMENTS = {
                nepochs=100000, cell=_g_cell("G2")),
     "G3": dict(pattern="slurm-g3-hydrogen-strongcorr-*_{idx}.out",
                ntasks=_g_ntasks("G3"), nepochs=100000, cell=_g_cell("G3")),
+    # G4/G5: C2 and CO stretched to the N2 scan's ratios. Parse G5 with G2 to pool
+    # the CO 4.0 seeds (G2 s0-4 + G5 s5-9).
+    "G4": dict(pattern="slurm-g4-c2-scan-*_{idx}.out", ntasks=_g_ntasks("G4"),
+               nepochs=100000, cell=_g_cell("G4")),
+    "G5": dict(pattern="slurm-g5-co-scan-*_{idx}.out", ntasks=_g_ntasks("G5"),
+               nepochs=100000, cell=_g_cell("G5")),
 }
 
 

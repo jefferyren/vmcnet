@@ -12,8 +12,8 @@ divergence_check.parse, and the pre-registered readout from wandb history:
     x_cap_frac_0_12k      mean norm_cap_applied over epochs 0-12k (Campaign log 4.15)
     x_cap_frac_8_10k      the same over 8-10k (late cap binding)
 
-Run after `parse_eval_energies.py --experiment G1 G2 G3 --backfill`, from the repo
-root with the .out files present:
+Run after `parse_eval_energies.py --experiment G1 G2 G3 G4 G5 --backfill`, from
+the repo root with the .out files present:
     python slurm/g_backfill_divergence.py            # write
     python slurm/g_backfill_divergence.py --dry-run  # print only
 Re-run it after any re-sync: a sync resets server-side summary fields.
@@ -32,6 +32,7 @@ from parse_eval_energies import EXPERIMENTS as PARSE_EXPERIMENTS
 ENTITY = "ren27-university-of-california-berkeley"
 # experiment -> wandb project. E14/E15 are the N2_4.0 end of the G1 bond scan.
 PROJECTS = {"G1": "vmcnet-phase-g", "G2": "vmcnet-phase-g", "G3": "vmcnet-phase-g",
+            "G4": "vmcnet-phase-g", "G5": "vmcnet-phase-g",
             "E14": "vmcnet-phase-e", "E15": "vmcnet-phase-e"}
 ARMS = ("ssu_defaults", "spring_mu0.99")
 
