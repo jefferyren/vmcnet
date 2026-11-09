@@ -1,7 +1,10 @@
 # Campaign log — SS-SPRING vs SPRING vs PRIME-SR
 
 **Handoff document.** Read this first in a new session; it is self-contained. Last
-updated 2026-10-29: §5 **Phase G RESULT** (the original SS-SPRING on more strongly
+updated 2026-11-08: §5 **Phase H, H1 RESULT** (θ frozen at snapshots of a diverging
+E14 s0 replay: Kaczmarz++ diverges on the frozen system at every β from 500 epochs
+before the event, while the run's own probe does not; H1 not supported, discrepancy
+open). Before that, 2026-10-29: §5 **Phase G RESULT** (the original SS-SPRING on more strongly
 correlated systems: it fails only on stretched heavy-atom multiple bonds — N2 from ~3.2
 Bohr, CO at 4.0 — and is clean on C2, stretched H10 and both H4 squares; §4 item 16).
 The optimizer code on master is now the original E14 code again (tag
@@ -1924,6 +1927,40 @@ history (`norm_cap_applied`; this reproduces E15's logged 66.5/65.5%):
   blocked errors, mean ± s.e.m. over seeds, Welch-style combined s.e.m. for the
   difference); cap fractions from wandb history at its ~10-step logging. Only H4 1.0
   has a reference energy; N2's spectroscopic curve values were not pinned.
+
+### Phase H — H1: is the probe slowed by the moving system? (frozen-θ Kaczmarz++, read 2026-11-08)
+
+**Report:** built by `slurm/report_h1_frozen.py` once the runs are in wandb project
+`vmcnet-phase-h` (`slurm/h1_log_to_wandb.py`).
+
+**Why.** F4d showed the in-run probe growing over the last ~30 rows before every event
+while β stayed frozen. H1, framed before the runs: θ changing every step slows the
+probe, the controller answers with more β, and the high β diverges. **Prediction:**
+Kaczmarz++ on the system frozen at a snapshot converges at the run's β near the event,
+while the run's own probe stalls and its β rises.
+
+**What ran.** `h1_n2_dense_replay.sbatch` replayed E14 s0 and E15 s7 from 10k (original
+code, E14 flags, checkpoint every 50). E14 s0's first event came at 14,319; it never
+NaN'd and ran to 16k at about −105.8 Ha. E15 s7 had no event by 16k. `h1_frozen_probe.py`
+froze E14 s0 at 9,999 and at event −500/−200/−50/−20: 3,000 steps of the module's probe
+recursion on 1,000 fresh MCMC walkers per step, with β fixed at 0.99, 0.995 and the run's
+β, plus a fresh adaptive controller, 2 targets each.
+
+**RESULT: H1 not supported.**
+- Healthy: the frozen probe contracts, g ≈ 0.998/step (−2.6 decades) at every β. The
+  fresh controller picks β 0.992, below the run's 0.996.
+- From event −500 on, the frozen probe **diverges at every β**: g 1.044–1.046 (−500),
+  1.040–1.041 (−200), 1.051–1.061 (−50), 1.13 (−20), growing until float32 overflow.
+  g differs by ≤ 0.02 between β 0.99 and the run's β. The fresh controller goes to
+  β = 1.0, because r_ip > 1 is clipped to 1.
+- Over the same epochs the run's own probe had r_ip 0.95 (−500), 1.02 (−200), 2.0 (−50)
+  and 21.8 (−20). The run's median β stayed at 0.9955–0.9959; it never rose.
+- **Open:** at 13,799 the moving system's probe contracts where the frozen one grows 4%
+  per step, which a linear recursion's initial state cannot explain. Not yet ruled out:
+  float32 error in the uncentred Gram (master lacks F4d; Phase F saw min eigenvalues
+  −0.005 to −0.010, below the 1e-3 damping). **Next:** the frozen run in float64 at
+  event −500; snapshots between 10k and 13.8k to find the onset; the saved time series
+  and Gram spectrum.
 
 ### Phase D — superseded header (the plan, as written before the runs)
 
