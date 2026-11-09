@@ -103,12 +103,15 @@ elif (( SLURM_ARRAY_TASK_ID < NSSU + ${#PRESETS[@]} * 3 )); then
   J=$((SLURM_ARRAY_TASK_ID - NSSU)); SYS_I=$((J / 3)); SEED=$((J % 3))
   TAG=spring_mu0.99; OPT=spring; ARM_FLAGS=(--config.vmc.optimizer.spring.mu=0.99)
 fi
-PRESET=${PRESETS[$SYS_I]}
 # Indices past the two arms: 5 more SS-SPRING seeds (5-9) at CO 4.0, pooling with
-# G2's seeds 0-4 there.
+# G2's seeds 0-4 there. They set PRESET directly and have no SYS_I, so the PRESETS
+# lookup must not run for them (under `set -u` an unset SYS_I is fatal -- the first
+# submission of 32-36 died on exactly that).
 if (( SLURM_ARRAY_TASK_ID >= NSSU + ${#PRESETS[@]} * 3 )); then
   SEED=$((SLURM_ARRAY_TASK_ID - NSSU - ${#PRESETS[@]} * 3 + 5)); PRESET=CO_4.0
   TAG=ssu_defaults; OPT=$SSU; ARM_FLAGS=(--config.vmc.optimizer."$SSU".mu=0.0)
+else
+  PRESET=${PRESETS[$SYS_I]}
 fi
 ETA=0.002
 
