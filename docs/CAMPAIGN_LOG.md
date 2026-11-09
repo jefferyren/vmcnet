@@ -1930,8 +1930,11 @@ history (`norm_cap_applied`; this reproduces E15's logged 66.5/65.5%):
 
 ### Phase H — H1: is the probe slowed by the moving system? (frozen-θ Kaczmarz++, read 2026-11-08)
 
-**Report:** built by `slurm/report_h1_frozen.py` once the runs are in wandb project
-`vmcnet-phase-h` (`slurm/h1_log_to_wandb.py`).
+**Report:** [H1 — frozen-theta Kaczmarz++ on a diverging stretched-N2 run](https://wandb.ai/ren27-university-of-california-berkeley/vmcnet-phase-h/reports/H1-—-frozen-theta-Kaczmarz++-on-a-diverging-stretched-N2-run--VmlldzoxODI3NDg3MQ==)
+(`slurm/report_h1_frozen.py`; runs logged by `slurm/h1_log_to_wandb.py`, project
+`vmcnet-phase-h`). The frozen Gram's min eigenvalue is −0.0055 to −0.006 with ~340–370
+eigenvalues below the damping at *every* snapshot, healthy included; its max eigenvalue
+rises 3,373 (healthy) → 4,608 (−500) → 6,291 (−20).
 
 **Why.** F4d showed the in-run probe growing over the last ~30 rows before every event
 while β stayed frozen. H1, framed before the runs: θ changing every step slows the

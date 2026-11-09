@@ -12,6 +12,7 @@ Then: python ~/.claude/skills/wandb-experiment-report/scripts/verify_report.py <
 
 import argparse
 
+import numpy as np
 import wandb
 import wandb_workspaces.reports.v2 as wr
 
@@ -51,6 +52,32 @@ def frozen_meta():
         if f"x_marker_{k}_lo" in c
     }
     return ranges, int(c["x_event"]), sorted(int(r.config["x_epoch"]) for r in runs)
+
+
+def zoom_ranges(event):
+    """y-ranges for the zoom panels from the replay's last 700 epochs before the event,
+    so the approach is visible and the event itself runs off the top."""
+    runs = list(
+        wandb.Api(timeout=60).runs(
+            f"{ENTITY}/{PH}", filters={"config.x_kind": "replay", "config.x_run": RUN}
+        )
+    )
+    if not runs:
+        raise SystemExit(f"no {RUN} replay run tagged in {PH}: run h1_log_to_wandb.py")
+    keys = ["energy_noclip", "variance_noclip"]
+    rows = list(runs[0].scan_history(keys=keys, min_step=event - 700, max_step=event))
+    out = {}
+    for k in keys:
+        x = np.array([r[k] for r in rows if r.get(k) is not None], dtype=float)
+        x = x[np.isfinite(x)]
+        if not len(x):
+            continue
+        lo, hi = np.percentile(x, [0.5, 99.5])
+        if k == "variance_noclip":
+            out[k] = (float(lo / 2), float(hi * 5))
+        else:
+            out[k] = (float(lo - 0.5 * (hi - lo)), float(hi + 1.5 * (hi - lo)))
+    return out
 
 
 def rs(name, kind):
@@ -100,7 +127,7 @@ def bar(title, metrics, xlab):
     return wr.BarPlot(metrics=metrics, title=title, orientation="h", title_x=xlab)
 
 
-def run_section(ranges, event):
+def run_section(ranges, event, zr):
     full, zoom = (9900.0, 16050.0), (float(event - 700), float(event + 150))
     m = "vertical lines = where theta was frozen"
     return grid(
@@ -117,7 +144,7 @@ def run_section(ranges, event):
                 f"Zoom: the 700 epochs before the first event ({event}); {m}",
                 ["energy_noclip", "freeze/energy"],
                 rx=zoom,
-                ry=ranges.get("energy"),
+                ry=zr.get("energy_noclip"),
                 xlab="epoch",
                 ylab="energy [Ha]",
             ),
@@ -134,7 +161,7 @@ def run_section(ranges, event):
                 f"Zoom: variance (log) before the event; {m}",
                 ["variance_noclip", "freeze/variance"],
                 rx=zoom,
-                ry=ranges.get("variance"),
+                ry=zr.get("variance_noclip"),
                 log=True,
                 xlab="epoch",
                 ylab="variance [Ha^2]",
@@ -328,7 +355,7 @@ def build(url=None):
         wr.H1("Takeaways — H1"),
         wr.MarkdownBlock(TAKEAWAYS),
         wr.H1("The diverging run and where theta was frozen"),
-        run_section(ranges, event),
+        run_section(ranges, event, zoom_ranges(event)),
         wr.H1("Kaczmarz++ on the frozen systems"),
         probe_section(),
     ]
